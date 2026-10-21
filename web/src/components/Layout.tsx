@@ -2,12 +2,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
   Bell, Boxes, CheckCircle2, Compass, FileText, FlaskConical, FolderKanban, Grid2x2, Home, Layers3,
-  ListChecks, Loader2, Menu, Microscope, Monitor, Moon, Plus, Search, Sun, Tags, Workflow, X, XCircle,
+  ListChecks, Loader2, Menu, Microscope, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Sun, Tags, Workflow, X, XCircle,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, qs, useApi, type Job, type Project } from "../api";
-import { initials, useReviewer, useTheme } from "../context";
+import { LS, initials, useReviewer, useTheme } from "../context";
 import { PaperDrawer } from "./PaperDrawer";
 import { Boundary } from "./ui";
 
@@ -22,12 +22,12 @@ export const NAV = [
   { to: "clusters", label: "Cluster review", icon: Boxes },
 ];
 
-function Brand() {
+function Brand({ collapsed }: { collapsed?: boolean }) {
   return (
-    <Link to="/" className="flex items-center gap-2.5 px-2">
-      <img src="/logo.png" alt="" className="size-10 dark:hidden" />
-      <img src="/logo-white.png" alt="" className="hidden size-10 dark:block" />
-      <div className="leading-tight">
+    <Link to="/" className={clsx("flex items-center gap-2.5", collapsed ? "justify-center" : "px-2")} title="Libera Expedition">
+      <img src="/logo.png" alt="" className="size-10 shrink-0 dark:hidden" />
+      <img src="/logo-white.png" alt="" className="hidden size-10 shrink-0 dark:block" />
+      <div className={clsx("leading-tight", collapsed && "hidden")}>
         <div className="h-title text-[16.5px]">Libera Expedition</div>
         <div className="muted text-[11.5px]">Research intelligence</div>
       </div>
@@ -35,26 +35,31 @@ function Brand() {
   );
 }
 
-function NavItem({ to, icon: Icon, label, end, badge }: { to: string; icon: any; label: string; end?: boolean; badge?: ReactNode }) {
+function NavItem({ to, icon: Icon, label, end, badge, collapsed }: {
+  to: string; icon: any; label: string; end?: boolean; badge?: ReactNode; collapsed?: boolean;
+}) {
   return (
     <NavLink
       to={to}
       end={end}
+      title={collapsed ? label : undefined}
       className={({ isActive }) =>
         clsx(
-          "flex items-center gap-3 rounded-[10px] px-3 py-2 text-[14px] font-medium transition-colors",
+          "relative flex items-center gap-3 rounded-[10px] py-2 text-[14px] font-medium transition-colors",
+          collapsed ? "justify-center px-0" : "px-3",
           isActive ? "bg-[var(--nav-active)] text-brand-600 dark:text-brand-300" : "text-[var(--text)] hover:bg-[var(--surface-2)]",
         )
       }
     >
       <Icon className="size-[18px] shrink-0 opacity-90" strokeWidth={1.8} />
-      <span className="truncate">{label}</span>
-      {badge && <span className="ml-auto">{badge}</span>}
+      {!collapsed && <span className="truncate">{label}</span>}
+      {badge && !collapsed && <span className="ml-auto">{badge}</span>}
+      {badge && collapsed && <span className="absolute top-1.5 right-2 size-2 rounded-full bg-brand-500 ring-2 ring-[var(--surface)]" />}
     </NavLink>
   );
 }
 
-function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+function Sidebar({ onNavigate, collapsed, onToggle }: { onNavigate?: () => void; collapsed?: boolean; onToggle?: () => void }) {
   const { project } = useParams();
   const { data: projects } = useApi<Project[]>("/projects", { refetchInterval: 10_000 });
   const { data: jobs } = useApi<Job[]>("/jobs" + qs({ project, limit: 5 }), { enabled: !!project, refetchInterval: 4000 });
@@ -66,19 +71,29 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const loc = useLocation();
   const page = project ? loc.pathname.split("/")[3] ?? "start" : "start";
   return (
-    <nav className="flex h-full flex-col gap-1 px-4 pt-5 pb-4" onClick={(e) => (e.target as HTMLElement).closest("a") && onNavigate?.()}>
-      <Brand />
+    <nav className={clsx("flex h-full flex-col gap-1 pt-5 pb-4", collapsed ? "px-3" : "px-4")}
+      onClick={(e) => (e.target as HTMLElement).closest("a") && onNavigate?.()}>
+      <div className={clsx("flex items-center", collapsed ? "flex-col gap-3" : "justify-between")}>
+        <Brand collapsed={collapsed} />
+        {onToggle && (
+          <button className="btn btn-ghost btn-icon btn-sm faint shrink-0" onClick={onToggle}
+            title={collapsed ? "Expand the sidebar (⌘B)" : "Collapse the sidebar (⌘B)"} aria-label={collapsed ? "Expand the sidebar" : "Collapse the sidebar"}>
+            {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+          </button>
+        )}
+      </div>
       <div className="mt-6 flex flex-col gap-0.5">
         {project ? (
           <>
             {NAV.map((n) => (
-              <NavItem key={n.to} to={`/p/${project}/${n.to}`} icon={n.icon} label={n.label} />
+              <NavItem key={n.to} to={`/p/${project}/${n.to}`} icon={n.icon} label={n.label} collapsed={collapsed} />
             ))}
             <div className="my-2 border-t border-[var(--line)]" />
             <NavItem
               to={`/p/${project}/pipeline`}
               icon={Workflow}
               label="Pipeline"
+              collapsed={collapsed}
               badge={
                 running ? (
                   <span className="flex items-center gap-1 text-[11.5px] text-brand-600"><Loader2 className="size-3 animate-spin" />{Math.round(running.progress * 100)}%</span>
@@ -90,14 +105,14 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           </>
         ) : (
           <>
-            <NavItem to="/" end icon={FolderKanban} label="Projects" />
-            <NavItem to="/new" icon={Plus} label="New project" />
+            <NavItem to="/" end icon={FolderKanban} label="Projects" collapsed={collapsed} />
+            <NavItem to="/new" icon={Plus} label="New project" collapsed={collapsed} />
           </>
         )}
-        <NavItem to="/queue" icon={ListChecks} label="Job queue" />
+        <NavItem to="/queue" icon={ListChecks} label="Job queue" collapsed={collapsed} />
       </div>
 
-      <div className="mt-5 flex items-center justify-between px-3">
+      <div className={clsx("mt-5 flex items-center justify-between px-3", collapsed && "hidden")}>
         <span className="muted text-[12.5px] font-medium">Projects</span>
         <Link to="/new" className="faint hover:text-brand-600" title="New project"><Plus className="size-4" /></Link>
       </div>
@@ -106,27 +121,33 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           <Link
             key={p.id}
             to={`/p/${p.id}/${page}`}
+            title={collapsed ? p.name : undefined}
             className={clsx(
-              "flex items-center gap-2.5 rounded-[9px] px-3 py-1.5 text-[13px]",
+              "flex items-center gap-2.5 rounded-[9px] py-1.5 text-[13px]",
+              collapsed ? "justify-center px-0" : "px-3",
               p.id === project ? "bg-[var(--nav-active)] font-medium text-brand-600 dark:text-brand-300" : "hover:bg-[var(--surface-2)]",
             )}
           >
             <Compass className="size-3.5 shrink-0 opacity-70" />
-            <span className="truncate">{p.name}</span>
-            {p.job && ["running", "queued"].includes(p.job.status) && (
+            {!collapsed && <span className="truncate">{p.name}</span>}
+            {!collapsed && p.job && ["running", "queued"].includes(p.job.status) && (
               <Loader2 className={clsx("ml-auto size-3 shrink-0", p.job.status === "running" ? "animate-spin text-brand-500" : "faint")} />
             )}
           </Link>
         ))}
-        <Link to="/" className="faint px-3 py-1.5 text-[12.5px] hover:text-brand-600">All projects →</Link>
+        {!collapsed && <Link to="/" className="faint px-3 py-1.5 text-[12.5px] hover:text-brand-600">All projects →</Link>}
       </div>
 
       <div className="mt-auto pt-3">
-        <div className="flex items-center gap-3 rounded-xl px-2 py-2">
-          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--chip)] text-[14px] font-semibold text-[var(--chip-text)]">
+        <div className={clsx("flex items-center rounded-xl py-2", collapsed ? "flex-col gap-2 px-0" : "gap-3 px-2")}>
+          <button
+            className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--chip)] text-[14px] font-semibold text-[var(--chip-text)]"
+            title={collapsed ? `${reviewer || "Set your name"}: expand the sidebar to edit` : "Edit your name"}
+            onClick={() => (collapsed ? onToggle?.() : setEditing(true))}
+          >
             {initials(reviewer || "?")}
-          </span>
-          <div className="min-w-0 flex-1">
+          </button>
+          <div className={clsx("min-w-0 flex-1", collapsed && "hidden")}>
             {editing ? (
               <input
                 autoFocus
@@ -329,11 +350,21 @@ export function Layout() {
   const loc = useLocation();
   const [search, setSearch] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => LS.get("libera.sidebar") === "collapsed");
+  const toggle = () =>
+    setCollapsed((c) => {
+      LS.set("libera.sidebar", c ? "expanded" : "collapsed");
+      return !c;
+    });
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setSearch((s) => !s);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b" && !(e.target as HTMLElement)?.closest?.("input, textarea")) {
+        e.preventDefault();
+        toggle();
       }
     };
     window.addEventListener("keydown", h);
@@ -341,8 +372,9 @@ export function Layout() {
   }, []);
   return (
     <div className="flex min-h-full">
-      <aside className="hidden w-[272px] shrink-0 border-r border-[var(--line)] bg-[var(--surface)] lg:block">
-        <div className="sticky top-0 h-screen"><Sidebar /></div>
+      <aside className={clsx("hidden shrink-0 border-r border-[var(--line)] bg-[var(--surface)] whitespace-nowrap lg:block",
+        collapsed ? "w-[72px]" : "w-[272px]")}>
+        <div className="sticky top-0 h-screen overflow-hidden"><Sidebar collapsed={collapsed} onToggle={toggle} /></div>
       </aside>
       {menu && (
         <div className="fixed inset-0 z-50 bg-slate-900/30 lg:hidden" onClick={() => setMenu(false)}>
