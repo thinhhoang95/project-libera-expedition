@@ -57,6 +57,42 @@ def _embedding_version(q, run) -> str:
     return RunParams.from_dict(json.loads(q("SELECT params FROM runs WHERE run_id = ?", (run,)).params.iloc[0])).embedding.version
 
 
+# ================================================================== second waves
+
+def _second_waves_table(S: pd.DataFrame, q, key: str, n: int = 12) -> None:
+    """One kind of second wave: a table, and the evidence of the selected idea."""
+    S = S.head(n).reset_index(drop=True)
+    short = lambda xs: ", ".join(list(xs)[:2]) + (f" +{len(xs) - 2}" if len(xs) > 2 else "")  # noqa: E731
+    tab = pd.DataFrame({"idea": S.idea, "from": S.origin, "year": S.year.astype("Int64"),
+                        "new audiences": [f"{n_}: {short(a)}" for n_, a in zip(S.n_new, S.new_audiences)],
+                        "citing papers (3 yrs / 3 before)": [f"{r} / {e}" for r, e in zip(S.recent, S.earlier)],
+                        "quiet uptake": S.get("n_quiet", pd.Series(0, index=S.index)),
+                        "likely next": [short(x) for x in S.likely_next]})
+    ev = st.dataframe(tab, hide_index=True, width="stretch", on_select="rerun", selection_mode="single-row", key=key)
+    if ev and ev.selection.rows:
+        r = S.iloc[ev.selection.rows[0]]
+        st.markdown(f"**{r.idea}**  \n*New audiences:* {', '.join(r.new_audiences)}  \n"
+                    + (f"*Moving towards it without citing it:* {', '.join(r.quiet_uptake)}  \n" if len(r.get('quiet_uptake', [])) else "")
+                    + (f"*Likely next:* {', '.join(r.likely_next)}  \n" if len(r.likely_next) else "")
+                    + f"*Backed by:* {r.backed_by}")
+        ev_ids = list(r.evidence)
+        if ev_ids:
+            t = q(f"SELECT year, title FROM papers WHERE paper_id IN ({','.join('?' * len(ev_ids))}) ORDER BY year DESC",
+                  tuple(ev_ids))
+            st.dataframe(t, hide_index=True, width="stretch")
+
+
+SECOND_WAVES_HOW = (
+    "Established ideas reaching **new audiences**: communities that began citing (or, for methods, using) them in the "
+    "last three complete years. **Citing papers** compares the last three years with the three before; only ideas "
+    "gaining use are listed (research works, and outside works from the last 15 years). **Quiet uptake** counts "
+    "communities whose recent work moved towards the idea without citing it (experiment 9: most uptake is uncited). "
+    "**Likely next** comes from the backtested models: community warmth for papers (experiment 10), method transfer "
+    "for methods (experiment 4), the closest community for outside works. This is a watchlist of diffusion already "
+    "under way, not advance warning: on the pilot, the import model improved ordering modestly (+0.025 AUC) without "
+    "a sharper top of the list. Select an idea for its evidence.")
+
+
 # ================================================================== Start here
 
 def render_start_here(run: str, q, paper_card, record) -> None:
@@ -203,6 +239,20 @@ def render_start_here(run: str, q, paper_card, record) -> None:
         else:
             st.caption("Run `landscape research-lab` to add these.")
 
+    # ---- second waves
+    SW = _load(run, "second_waves.parquet")
+    if SW is not None and len(SW):
+        st.subheader("Second waves: ideas reaching new audiences")
+        _how(SECOND_WAVES_HOW)
+        tabs = st.tabs(["Papers in the map", "From outside the field", "Methods"])
+        for tab, kind in zip(tabs, ("paper", "external", "method")):
+            with tab:
+                part = SW[SW.kind == kind]
+                if part.empty:
+                    st.caption("None this year.")
+                else:
+                    _second_waves_table(part, q, f"sw_{kind}")
+
     # ---- coverage gaps
     if L is not None:
         st.subheader("Coverage gaps")
@@ -220,6 +270,7 @@ def render_start_here(run: str, q, paper_card, record) -> None:
         "| Bridges › Papers to bring in, hidden gems | **Use** | experiment 1 and the 8c chronological test (19.5% vs 13.6% for popularity in the top 10) |\n"
         "| People › Early work | **Use** as a reading list | experiment 2: AUC 0.82 |\n"
         "| Bridges › From outside the field | **Use** as a review list | experiment 6: modest gains (+0.025 AUC) |\n"
+        "| Second waves (here and on My paper) | **Use** as a watchlist | experiments 4, 6, 9, 10: diffusion already under way, not advance warning |\n"
         "| Bridges › Cluster pairs, grid method transfer | **Use with care** | Phase 8, experiment 4 |\n"
         "| Status badges, Ranking, Rising pockets | **Describe only** | direction is sensitive to sampling |\n"
         "| People, institutions | **Describe only** | not better than popularity at predicting citations |\n\n"
@@ -428,6 +479,20 @@ def _render_paper(run, q, paper_card, record, rec) -> None:
                          hide_index=True, width="stretch")
             st.caption("Recent papers this field is likely to read next (experiment 2), closest to yours.")
 
+    # ---- second waves near this paper
+    SW = _load(run, "second_waves.parquet")
+    near = set(W[W.home].community.str.replace(" ◇", "", regex=False)) | set(
+        cand.head(3).community.str.replace(" ◇", "", regex=False))
+    if SW is not None and len(SW) and near:
+        hit = SW[[bool(near & (set(a) | set(b) | set(c))) for a, b, c in
+                  zip(SW.new_audiences, SW.likely_next, SW.get("quiet_uptake", pd.Series([[]] * len(SW))))]]
+        hit = hit[hit.idea_id != rec["paper_id"]]
+        if len(hit):
+            st.subheader("Second waves near you")
+            st.caption("Ideas reaching your home or warmest communities as new audiences, quiet uptake or likely next. "
+                       + SECOND_WAVES_HOW.split(" Select")[0])
+            _second_waves_table(hit.sort_values(["n_new", "momentum"], ascending=False), q, f"mp_sw_{rec['paper_id']}", n=8)
+
     # ---- people in the warm communities (descriptive)
     st.subheader("Active in your warmest communities")
     top3 = cand.head(3).cluster_id.tolist()
@@ -440,9 +505,23 @@ def _render_paper(run, q, paper_card, record, rec) -> None:
                       AND pc.cluster_id IN ({",".join("?" * len(top3))}) AND p.year >= ?
                     GROUP BY ALL ORDER BY papers DESC LIMIT 12""", (run, *top3, y1 - 3))
         ppl["community"] = ppl.cluster_id.map(labels.label)
-        st.dataframe(ppl[["name", "community", "papers"]], hide_index=True, width="stretch")
-        st.caption(f"Authors with the most papers since {y1 - 3} in your three warmest communities. Descriptive "
-                   "decision support for whom to read or contact, not a ranking of people.")
+        # insider marker: a track record in the map before the recent window (experiments 5 and 11: insiders'
+        # papers are cited more by others; big names stepping in do not start waves)
+        names = tuple(ppl.name)
+        if names:
+            hist = q(f"""SELECT a.display_name AS name, count(DISTINCT s.paper_id) AS earlier
+                         FROM authors a JOIN authorships s USING (author_id) JOIN papers p ON p.paper_id = s.paper_id
+                         JOIN provenance v ON v.paper_id = p.paper_id AND v.run_id = ?
+                         WHERE a.display_name IN ({",".join("?" * len(names))}) AND p.year < ? GROUP BY 1""",
+                     (run, *names, y1 - 3)).set_index("name").earlier
+            ppl["earlier papers in the map"] = ppl.name.map(hist).fillna(0).astype(int)
+            ppl["track record"] = np.where(ppl["earlier papers in the map"] >= 2, "insider", "newer")
+        st.dataframe(ppl[["name", "community", "papers", "earlier papers in the map", "track record"]], hide_index=True,
+                     width="stretch", column_config={"papers": st.column_config.NumberColumn(f"papers since {y1 - 3}")})
+        st.caption(f"Authors with the most papers since {y1 - 3} in your three warmest communities. **Insider** = at "
+                   "least 2 earlier papers in the map: insiders' papers draw more citations from others (experiments 5 "
+                   "and 11), while big names stepping somewhere new do not start a follow-up wave (experiment 11). "
+                   "Descriptive decision support for whom to read or contact, not a ranking of people.")
     note = st.text_input("Note on these suggestions", key=f"mp_note_{rec['paper_id']}")
     cc = st.columns(3)
     for col, act in zip(cc, ["useful", "obvious", "wrong"]):

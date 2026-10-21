@@ -70,7 +70,8 @@ them through `model_score()`.
 ### Next steps
 
 1. **Score the prospective snapshot** (`docs/snapshots/dro-pilot-2026-10-21.json`) at 6, 12 and 24
-   months: collect papers published after 2026-10-21 with the same routes and apply its protocol.
+   months: collect papers published after 2026-10-21 with the same routes, then
+   `landscape score-snapshot --run-id dro-pilot --date 2026-10-21 --months 6` (and 12, 24).
    Back up `data/snapshots/`, which is not in git.
 2. **An independent, year-balanced field sample** (downloads) before claiming trends or community
    births; and a **blinded expert review** of the opportunity lists, the endpoint for "feasible,

@@ -233,6 +233,12 @@ def cmd_my_paper(a, con):
     print("Open it in the explorer: My paper.")
 
 
+def cmd_score_snapshot(a, con):
+    from .snapshot import score_snapshot
+
+    print(json.dumps(score_snapshot(con, a.run_id, _params(con, a.run_id), a.date, a.months), indent=2, default=str))
+
+
 def cmd_status(a, con):
     q = lambda sql: con.execute(sql, [a.run_id]).df().to_string(index=False)  # noqa: E731
     print(q("SELECT run_id, seed_ids, spend_usd, model_versions FROM runs WHERE run_id = ?"))
@@ -262,7 +268,8 @@ def main(argv=None):
 
     for name, fn in [("expand", cmd_expand), ("preprints", cmd_preprints), ("semantic", cmd_semantic), ("extract", cmd_extract),
                      ("qa", cmd_qa), ("embed", cmd_embed), ("core", cmd_core), ("viz", cmd_viz), ("signals", cmd_signals), ("backtest", cmd_backtest), ("research-lab", cmd_research_lab), ("external", cmd_external),
-                     ("portfolio", cmd_portfolio), ("my-paper", cmd_my_paper), ("status", cmd_status)]:
+                     ("portfolio", cmd_portfolio), ("my-paper", cmd_my_paper), ("score-snapshot", cmd_score_snapshot),
+                     ("status", cmd_status)]:
         s = sub.add_parser(name)
         s.add_argument("--run-id", required=True)
         if name == "extract":
@@ -289,6 +296,9 @@ def main(argv=None):
             s.add_argument("--llm-cap", type=float, default=2.0, help="USD cap for external facet extraction")
         if name == "my-paper":
             s.add_argument("--doi", required=True)
+        if name == "score-snapshot":
+            s.add_argument("--date", required=True, help="snapshot date YYYY-MM-DD (docs/snapshots/<run>-<date>.json)")
+            s.add_argument("--months", type=int, default=12, help="horizon after the snapshot date")
         s.set_defaults(fn=fn)
 
     s = sub.add_parser("explorer", help="open the Streamlit explorer (close it before running pipeline steps)")

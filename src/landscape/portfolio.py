@@ -283,9 +283,163 @@ def live_imports(f: Field, works: pd.DataFrame, edges: pd.DataFrame, cutoffs=(20
     L["cluster_label"] = L.cluster_id.map(f.clusters.label)
     L["recent_citers"] = recent_n.reindex(L.paper_id).fillna(0).astype(int).to_numpy()
     L["corpus_citers_total"] = csum(0, 9999).reindex(L.paper_id).fillna(0).astype(int).to_numpy()
-    L = L.merge(works[["paper_id", "title", "year", "subfield", "field", "venue", "cited_by_count"]], on="paper_id",
-                how="left")
+    L = L.merge(works[["paper_id", "title", "year", "type", "subfield", "field", "venue", "cited_by_count"]],
+                on="paper_id", how="left")
     return L.sort_values("score", ascending=False).assign(as_of=T)
+
+
+# ------------------------------------------------------------------ second waves
+
+def second_waves(f: Field, W: pd.DataFrame, L: pd.DataFrame | None, edges: pd.DataFrame | None) -> pd.DataFrame:
+    """Established ideas reaching new audiences: a watchlist of diffusion already under way, with evidence.
+
+    - paper:    a paper in the map (published at least 3 years ago) that communities other than its own began
+                citing in the last three complete years;
+    - external: a work outside the map the field cites more and more (experiment 6), with the communities
+                that began citing it lately;
+    - method:   a method community used for problem communities it had not been used for before.
+    Each row: new audiences, citing (or using) papers in the last three years vs the three before, likely next
+    audiences from the backtested models (community warmth, experiment 10; method transfer, experiment 4;
+    closest communities for external works), and supporting papers. Ordered by new audiences and momentum,
+    within each kind: a watchlist, not a forecast of importance.
+    """
+    T = f.t_live
+    lab = f.lab
+    label = f.clusters.label
+    rows = []
+
+    def audiences(cite: pd.DataFrame, home):
+        """cite: citing_id, cited_id, citing_year, X (citing community)."""
+        out = []
+        for idea, g in cite.groupby("cited_id"):
+            g = g[g.X != home.get(idea)] if home is not None else g
+            first = g.groupby("X").citing_year.min()
+            new = first[first >= T - 2].index.tolist()
+            recent = g[g.citing_year.between(T - 2, T)]
+            earlier = g[g.citing_year.between(T - 5, T - 3)]
+            if not new or recent.citing_id.nunique() < 3:
+                continue
+            ev = recent[recent.X.isin(new)].sort_values("citing_year", ascending=False).citing_id.unique()[:6].tolist()
+            out.append({"idea_id": idea, "new_audiences": new, "n_new": len(new),
+                        "recent": int(recent.citing_id.nunique()), "earlier": int(earlier.citing_id.nunique()),
+                        "evidence": ev})
+        return pd.DataFrame(out)
+
+    # papers in the map
+    corpus = set(f.papers.paper_id)
+    rc = f.refs[f.refs.cited_id.isin(corpus)].assign(citing_year=lambda d: d.citing_id.map(f.year), X=lambda d: d.citing_id.map(lab))
+    rc = rc.dropna(subset=["X", "citing_year"])
+    old = set(f.papers[f.papers.year <= T - 3].paper_id)
+    A = audiences(rc[rc.cited_id.isin(old)], lab)
+    if len(A):
+        nxt = (W[W["rank"].notna() & (W["rank"] <= 3)].groupby("paper_id").cluster_id.apply(list)
+               if W is not None else pd.Series(dtype=object))
+        t = f.papers.set_index("paper_id")
+        for r in A.itertuples():
+            rows.append({"kind": "paper", "idea_id": r.idea_id, "idea": t.title.get(r.idea_id), "type": t["type"].get(r.idea_id),
+                         "origin": label.get(lab.get(r.idea_id), ""), "year": t.year.get(r.idea_id),
+                         "new_audiences": [label.get(x, x) for x in r.new_audiences], "n_new": r.n_new,
+                         "recent": r.recent, "earlier": r.earlier,
+                         "likely_next": [label.get(x, x) for x in nxt.get(r.idea_id, []) if x not in r.new_audiences][:3],
+                         "evidence": r.evidence,
+                         "backed_by": "citations by new communities (descriptive); likely next: community warmth, exp10"})
+    # external works
+    if L is not None and edges is not None:
+        e = edges.assign(X=edges.citing_id.map(lab)).dropna(subset=["X"])
+        B = audiences(e[e.cited_id.isin(set(L.paper_id))], None)
+        Lx = L.set_index("paper_id")
+        for r in B.itertuples():
+            x = Lx.loc[r.idea_id]
+            nxt = [x.cluster_id] if isinstance(x.cluster_id, str) and x.cluster_id not in r.new_audiences else []
+            rows.append({"kind": "external", "idea_id": r.idea_id, "idea": x.title, "origin": x.subfield, "type": x.get("type"),
+                         "year": x.year, "new_audiences": [label.get(c, c) for c in r.new_audiences], "n_new": r.n_new,
+                         "recent": r.recent, "earlier": r.earlier, "likely_next": [label.get(c, c) for c in nxt],
+                         "evidence": r.evidence, "outside_field": bool(x.outside_field), "import_score": float(x.score),
+                         "backed_by": "exp6 import model (+0.025 AUC; no sharper top of list)"})
+    # methods reaching new problems
+    pm = f.con.execute("""SELECT problem_cluster, method_cluster, year, count, first_year FROM pm_matrix
+                          WHERE run_id = ? AND alpha = 0.5""", [f.run]).df()
+    if len(pm):
+        mlab = dict(f.con.execute("SELECT cluster_id, label FROM clusters WHERE run_id = ?", [f.run]).fetchall())
+        tr = f.con.execute("""SELECT subject FROM signals WHERE run_id = ? AND signal_type = 'bridge_method_transfer'
+                              ORDER BY rank""", [f.run]).df()
+        trs = pd.DataFrame([json.loads(s) for s in tr.subject]) if len(tr) else pd.DataFrame(
+            columns=["method_cluster", "problem_cluster"])
+        pc = f.con.execute("""SELECT a.paper_id, a.cluster_id AS p, b.cluster_id AS m, pp.year FROM paper_cluster a
+                              JOIN paper_cluster b ON a.paper_id = b.paper_id AND b.run_id = a.run_id AND b.facet = 'method'
+                                   AND b.alpha = 0.5 AND b.resolution = 'medium'
+                              JOIN papers pp ON pp.paper_id = a.paper_id
+                              WHERE a.run_id = ? AND a.facet = 'problem' AND a.alpha = 0.5 AND a.resolution = 'medium'""",
+                           [f.run]).df()
+        for m, g in pm.groupby("method_cluster"):
+            cells = g.groupby("problem_cluster").agg(first=("first_year", "min"))
+            recent_n = g[g.year.between(T - 2, T)].groupby("problem_cluster")["count"].sum()
+            new = [p for p in cells.index if cells.loc[p, "first"] >= T - 2 and recent_n.get(p, 0) >= 2]
+            if not new:
+                continue
+            ev = pc[(pc.m == m) & pc.p.isin(new) & pc.year.between(T - 2, T)].sort_values("year", ascending=False)
+            nxt = trs[trs.method_cluster == m].problem_cluster.tolist()[:3] if len(trs) else []
+            rows.append({"kind": "method", "idea_id": m, "idea": mlab.get(m, m), "origin": "",
+                         "year": int(g.first_year.min()), "new_audiences": [label.get(p, mlab.get(p, p)) for p in new],
+                         "n_new": len(new), "recent": int(g[g.year.between(T - 2, T)]["count"].sum()),
+                         "earlier": int(g[g.year.between(T - 5, T - 3)]["count"].sum()),
+                         "likely_next": [label.get(p, mlab.get(p, p)) for p in nxt],
+                         "evidence": ev.paper_id.unique()[:6].tolist(),
+                         "backed_by": "new problem x method cells (descriptive); likely next: method transfer, exp4"})
+    S = pd.DataFrame(rows)
+    if S.empty:
+        return S
+    # quiet uptake (experiment 9): communities whose recent methods / innovations moved towards the idea without
+    # citing it: closest recent statement >= 0.894 (99th percentile of random innovation-method pairs, 256-d) and
+    # closer than the community's statements from 3-5 years before
+    THR = 0.894
+    comm = {}
+    for c in f.cids:
+        mem = lab.index[lab.values == c]
+        rec = [x for x in mem if T - 2 <= f.year[x] <= T]
+        old_ = [x for x in mem if T - 5 <= f.year[x] <= T - 3]
+        comm[c] = (np.vstack([f.rows("method", rec)[1], f.rows("innovation", rec)[1]]),
+                   np.vstack([f.rows("method", old_)[1], f.rows("innovation", old_)[1]]))
+    ext_inn = external.vectors(f.run, "innovation", DIM) if edges is not None else ({}, None)
+    cited_by = {}
+    if edges is not None:
+        for k, g in edges.assign(X=edges.citing_id.map(lab)).dropna(subset=["X"]).groupby("cited_id"):
+            cited_by[k] = set(g.X)
+    for k, g in rc.groupby("cited_id"):
+        cited_by.setdefault(k, set()).update(g.X)
+    quiet = []
+    for r in S.itertuples():
+        if r.kind == "paper":
+            v = f.rows("innovation", [r.idea_id])[1]
+        elif r.kind == "external" and r.idea_id in ext_inn[0]:
+            v = ext_inn[1][[ext_inn[0][r.idea_id]]]
+        else:
+            quiet.append([])
+            continue
+        if not len(v):
+            quiet.append([])
+            continue
+        out = []
+        for c, (Rv, Ev) in comm.items():
+            if c in cited_by.get(r.idea_id, set()) or c == lab.get(r.idea_id) or not len(Rv):
+                continue
+            rmax = float((Rv @ v[0]).max())
+            emax = float((Ev @ v[0]).max()) if len(Ev) else -1.0
+            if rmax >= THR and rmax > emax:
+                out.append(label.get(c, c))
+        quiet.append(out)
+    S["quiet_uptake"] = quiet
+    S["n_quiet"] = S.quiet_uptake.map(len)
+    S["momentum"] = np.log((S.recent + 1) / (S.earlier + 1))
+    # a second wave is an idea that spreads *and* gains use: research works only (textbooks are cited by every
+    # community), external works from the last 15 years, more citing papers lately than in the 3 years before
+    research = S.get("type", pd.Series(index=S.index, dtype=object)).isin(["article", "preprint", "conference-paper", "proceedings-article"]) | (S.kind == "method")
+    recent_enough = (S.kind != "external") | (S.year >= T - 15)
+    growing = (S.kind == "method") | (S.recent > S.earlier)
+    S = S[research & recent_enough & growing]
+    S = S.sort_values(["kind", "n_new", "momentum"], ascending=[True, False, False])
+    S["as_of"] = T
+    return S
 
 
 # ------------------------------------------------------------------ build
@@ -299,6 +453,7 @@ def build_portfolio(con, run_id: str, p: RunParams) -> dict:
     W.to_parquet(out / "warmth.parquet", index=False)
     stats["warmth_rows"] = len(W)
     ed = external.ext_dir(run_id)
+    L = edges = None
     if (ed / "works.parquet").exists() and (ed / "vectors_abstract.parquet").exists():
         works = pd.read_parquet(ed / "works.parquet")
         edges = pd.read_parquet(ed / "edges.parquet").dropna(subset=["citing_year"])
@@ -311,6 +466,9 @@ def build_portfolio(con, run_id: str, p: RunParams) -> dict:
         stats["external_reference_share"] = round(ext_share, 3)
     else:
         stats["external"] = "not built: run `landscape external` first"
+    S = second_waves(f, W, L, edges)
+    S.to_parquet(out / "second_waves.parquet", index=False)
+    stats["second_waves"] = S.kind.value_counts().to_dict() if len(S) else {}
     (out / "summary.json").write_text(json.dumps(stats, indent=2) + "\n")
     return stats
 

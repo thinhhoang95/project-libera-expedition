@@ -51,6 +51,7 @@ uv run landscape backtest --run-id dro-pilot   # Phase 8: cutoffs 2020-2023, pre
 uv run landscape external --run-id dro-pilot   # external works the field cites (~$1 of LLM extraction, once)
 uv run landscape portfolio --run-id dro-pilot  # Start here / My paper artefacts (import map, imports now, warmth)
 uv run landscape my-paper --run-id dro-pilot --doi <DOI>  # any paper: communities warm to it, opportunities
+uv run landscape score-snapshot --run-id dro-pilot --date 2026-10-21 --months 12  # the frozen prospective test
 uv run python scripts/phase8c/prepare_cutoffs.py --run-id dro-pilot --cutoffs 2019
 uv run landscape research-lab --run-id dro-pilot  # offline diagnostics and experiments, including a complete chronological test
 uv run landscape status   --run-id dro-pilot
