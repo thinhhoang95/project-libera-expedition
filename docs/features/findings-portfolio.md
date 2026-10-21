@@ -56,6 +56,11 @@ explorer's **Experiments** view keeps every result table open and re-runnable (`
 | 34 | **Gateway reads** (readers go on to join the community) | exp21: like for like the effect is small (AUC 0.535); per paper, popularity correlates better | Not product-grade | — |
 | 35 | **How the question is asked now** | exp22: entries using the current formulation do no better (all intervals span 0) | Not supported | — |
 | 36 | **Crowding vs demand** | exp23: crowded areas mark attention: near-duplicates present → +9.5 pts uptake; answering a stated limitation → the community moves towards you (+5.4) but no more citations | Describe | `crowding.parquet` (discovery.py): gauge on My paper |
+| 37 | **Saturation** (shrinking reported gains) | exp24: only 107 of 1,053 abstracts with a quantitative result state a gain over a named baseline; one comparable community-cutoff | Open: needs full texts | — |
+| 38 | **What insiders read that newcomers miss** | exp25: insider-only works are real sources of current methods (76%, as classics) but citing them adds nothing once compared like for like; citing the classics goes with staying (+4 points [+1, +6]) | Not adopted (supports Read this first's classics) | — |
+| 39 | **Community tempo** | exp26: tempo is not a stable trait (rank correlation 0.13 [−0.09, +0.33]); building on recent ideas helps staying in fast communities (+4.4 [+0.9, +7.9]) but not uptake | Not adopted (hint only) | — |
+| 40 | **Standard testbeds** | exp27: abstracts rarely name shared testbeds (1.8% of papers); no detectable payoff | Not demonstrated | — |
+| 41 | **Open disagreements** | exp28: 2 conflicts in 3,360 same-question pairs (both genuine, e.g. 1/N vs mean-variance); untestable | Not demonstrated; needs full texts | — |
 
 ## Borrowed ideas (exp6)
 

@@ -1,6 +1,6 @@
 # Experiments: orientation for choosing a direction and what to read (Phase 10)
 
-Status: experiments 12-16 done (no product change yet) · Scripts: `scripts/phase10/` · Results: Experiments view (`data/projects/<run>/backtest/experiments/`) · Pilot: `dro-pilot`
+Status: experiments 12-28 done · Scripts: `scripts/phase10/` · Results: Experiments view (`data/projects/<run>/backtest/experiments/`) · Pilot: `dro-pilot`
 
 These experiments ask what helps someone **orient**: how to enter a community, what to read first, and which ideas
 last. None is an outcome-prediction model. Each tests a simple, readable rule against simple alternatives, on
@@ -20,7 +20,14 @@ uv run --no-sync python exp13_reading.py  [--run-id dro-pilot]   # ~35 s
 uv run --no-sync python exp14_durable.py  [--run-id dro-pilot]   # ~10 s
 uv run --no-sync python exp15_lifecycle.py [--run-id dro-pilot]   # ~8 s
 uv run --no-sync python exp16_open_questions.py [--run-id dro-pilot]   # ~20 s
+uv run --no-sync python exp24_saturation.py [extract] [analyse]   # extraction ~$0.09, cached
+uv run --no-sync python exp25_insider_reads.py   # ~20 s (needs exp12)
+uv run --no-sync python exp26_tempo.py           # ~15 s (needs exp12)
+uv run --no-sync python exp27_testbeds.py        # ~15 s
+uv run --no-sync python exp28_disagreements.py [classify] [analyse]   # classification ~$0.46, cached
 ```
+
+Experiments 24 and 28 call the run's extraction model through `landscape.llm` (the rest stay self-contained).
 
 - **Self-contained:** the scripts use `scripts/phase10/common.py`, not the `landscape` package, and read the
   migrated layout (`data/shared/`, `data/projects/<run>/`).
@@ -440,6 +447,114 @@ The thresholds are the 99th percentiles of random pairs.
 - **Answering a stated limitation pays off in content, not citations:** the community's later work moves towards the
   entry.
 - The "too crowded" worry is not supported over three years. A long-run scooping effect cannot be measured here.
+
+## 24. Is a direction saturating? Diminishing returns in reported gains
+
+**Question.** When the gains papers report on a direction keep shrinking, is the direction running out of easy wins?
+
+**Extraction** (`exp24_saturation.py extract`, $0.089 for 1,053 abstracts). For every paper whose abstract reports
+a quantitative result, the run's extraction model returned:
+- the headline relative gain over the best named baseline, in percent;
+- its kind (performance improvement, error reduction, cost reduction, speed-up, other);
+- the quoted words.
+
+**Hand check of 40 extractions.** About 35 values match the quoted words.
+
+**Result: not testable on abstracts.**
+- Only **107 of 1,053** abstracts state a gain against a named baseline: 40 speed-ups, 31 cost reductions, 29 other.
+  The other 945 compare to no baseline or give absolute numbers only, so the model returned none.
+- Comparing like kinds of gain within a community across two windows leaves **one** community-cutoff.
+- A saturation gauge would need full texts or result tables, not abstracts.
+
+## 25. What insiders read that newcomers miss
+
+**Lists**, for each community and cutoff (2019–2022), from its papers of T−3…T−1:
+- **insider-only:** works cited by at least 3 papers of established authors (2+ earlier papers in the
+  community), with the highest ratio of insider to newcomer citation rate, the community's 10 most cited works
+  excluded;
+- **classics:** those 10 most cited works.
+
+Lists exist where both groups wrote at least 5 papers: 34 community-cutoffs.
+
+**Test.** Experiment 12's entries (2,621; 923 distinct papers), compared on whether the entry paper cites an
+insider-only work or a classic. Experiment 12's controls are held fixed, as is the other reading trait. Intervals
+resample communities.
+
+| Outcome | Cites insider-only: raw with vs without | Adjusted (90% CI) | Cites a classic: raw | Adjusted (90% CI) |
+| --- | --- | --- | --- | --- |
+| stayed | 15% vs 10% | +0.002 [−0.031, +0.041] | 14% vs 6% | **+0.040 [+0.013, +0.062]** |
+| taken up by others | 36% vs 19% | +0.031 [−0.013, +0.067] | 26% vs 16% | −0.002 [−0.053, +0.056] |
+| community moved towards it | 31% vs 27% | −0.018 [−0.070, +0.030] | 29% vs 26% | −0.014 [−0.051, +0.037] |
+
+- **Insider-only reading adds nothing once compared like for like.** Its raw advantage comes with insider co-authors
+  and the other controls.
+- **Citing the classics goes with staying (+4 points).** This supports the classics half of *Read this first*.
+- **The knowledge is real, though.** Insider-only works are as often sources of the community's current methods as
+  the classics are (76% vs 76%; other cited works 69%). Reading them just does not mark a newcomer who will do better.
+
+**Not adopted.** The live lists are kept for inspection in `backtest/exp25_insider_reads_live.parquet`.
+
+## 26. Community tempo: how recent are the ideas that match its questions?
+
+**Tempo**, for each community and cutoff:
+- for every problem statement of T−2…T, the closest earlier innovation statement by anyone (cosine ≥ 0.880, the
+  99th percentile of random innovation–problem pairs);
+- tempo = the share of these matches that are 3+ years old (high = slow).
+
+The median age is uninformative here: the map is densest in recent years, so most matches are a year old.
+
+**Results:**
+- **Not a stable trait.** Tempo now barely predicts tempo three years later (mean rank correlation 0.13,
+  [−0.09, +0.33]; 72 community-cutoffs). It also drifts with the map's age, from 22% to 58% older matches.
+- **Payoff for newcomers** (experiment 12's entries; *recent source* = the entry's method is closest to an earlier
+  idea younger than the median):
+
+| Outcome | Recent source, fast communities | Recent source, slow communities | Fast − slow |
+| --- | --- | --- | --- |
+| stayed | +0.024 [−0.004, +0.054] | −0.020 [−0.042, +0.001] | **+0.044 [+0.009, +0.079]** |
+| taken up | +0.031 [−0.017, +0.073] | +0.042 [−0.000, +0.084] | −0.011 [−0.068, +0.051] |
+| community moved towards it | −0.041 [−0.102, +0.034] | −0.020 [−0.073, +0.036] | −0.021 [−0.104, +0.066] |
+
+**Not adopted.** One interaction (building on recent ideas helps staying in fast communities) is significant. But
+tempo itself is not stable, the effect is absent for uptake, and two tempo definitions were tried (the first, median
+age, was degenerate). So it is a hint, not a finding.
+
+## 27. How a community evaluates: standard testbeds
+
+**Standard testbeds**, per community and cutoff: the community's data and domain statements (domain_data facet;
+2,894 papers have one) from T−3…T−1, grouped by average linkage at cosine 0.94 (the 99.9th percentile of random
+pairs). A standard testbed is a group of at least 3 papers from at least 2 unrelated teams. The most generic fifth of
+groups ("real financial data", "simulated and real data") is dropped. Example groups: IEEE bus test systems (14-,
+33-, 118-, 123-bus), suites of benchmark functions, multi-UAV communication setups.
+
+**Coverage is the finding:**
+- only 40 candidate groups exist across all communities and cutoffs;
+- of 2,439 year-T research papers, 1.8% use a standard testbed, 66% their own, and 33% name no data.
+
+| Outcome | Standard vs own testbed, raw | Adjusted (90% CI) |
+| --- | --- | --- |
+| taken up by others | 26% vs 21% | +0.048 [−0.045, +0.120] |
+| community moved towards it | 35% vs 31% | +0.053 [−0.074, +0.162] |
+
+**Not demonstrated.** Abstracts seldom name shared testbeds, so "how this community evaluates" cannot be built
+reliably from them. The live groups are kept in `backtest/exp27_testbeds_live.parquet`.
+
+## 28. Open disagreements
+
+**Pairs.** 3,360 pairs of papers asking the same question (problem statements ≥ 0.93 apart, < 0.99), from unrelated
+teams. The run's extraction model ($0.46) labelled each pair from the two papers' problem, method and result
+statements as conflict, agree, or different aspects, with quotes.
+
+**Result: genuine but very rare.**
+- Labels: **2 conflict**, 62 agree, 3,296 different aspects.
+- Both conflicts are real:
+  - whether mean-variance portfolios beat the naive 1/N rule (one paper finds that no model consistently beats it,
+    another that most do, significantly), a known controversy;
+  - competing claims of the best metaheuristic for a hybrid-energy design.
+- A sample of "different" pairs was correctly judged not comparable.
+
+The follow-up test cannot be powered: only one conflict pair falls in 2016–2022, against 51 agreeing pairs. Abstracts state results in incomparable settings, so
+"unsettled questions" would need full texts or a looser notion of disagreement.
 
 ## In the product portfolio
 
