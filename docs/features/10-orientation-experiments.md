@@ -231,9 +231,9 @@ What it says:
 3. **Generic methods** in communities that have few of them draw a little more convergence from the community's
    later work.
 
-**Product use (when the portfolio files are free):** a *survey gap* marker per community. It is the one
+**In the product:** a *survey gap* status per community (`survey_gaps.parquet`, below). It is the one
 "what is missing here" signal with like-for-like, dose-response evidence. The lifecycle mix itself is descriptive,
-with the one transition above.
+with the one transition above, and is not shown.
 
 ## 16. Long-standing open questions
 
@@ -282,7 +282,7 @@ Scripts: `exp15_lifecycle.py` (~8 s), `exp16_open_questions.py` (~20 s).
 
 ## In the product portfolio
 
-`src/landscape/orientation.py` turns the three results into artefacts, written next to the other portfolio files
+`src/landscape/orientation.py` turns the results into artefacts, written next to the other portfolio files
 in `data/projects/<run>/portfolio/`:
 
 ```bash
@@ -294,6 +294,7 @@ uv run --no-sync python src/landscape/orientation.py --run-id dro-pilot   # ~3 s
 | `reading_paths.parquet` | **Read this first**, per community: up to 20 papers alternating *classic* (most cited by the community) and *source of current methods* (the earliest close source of the methods and innovations of its last 3 years), with how many community papers cite each and how many current methods it is the source of | exp13 | 24 communities |
 | `entry_routes.parquet`, `entry_effects.json` | **How people got in**, per community and strategy: entries of the latest year with three complete years of outcomes (2022 → 2023-25), their stayed and taken-up rates, insider co-author share, up to 3 example entries taken up by others, and the strategy mix of the latest year; plus the pilot's like-for-like effects | exp12 | 1,209 entries with outcomes |
 | `lasting.parquet` | **Lasting marker**, per paper from 2018 on: breadth at publication (how many communities' earlier work is already close to its idea), ranked among equally generic ideas; *lasting* = top third and breadth ≥ 2. Older papers are *not assessed* (the map is too thin before 2018) | exp14 | 1,383 of 4,311 assessed |
+| `survey_gaps.parquet` | **Where a survey is missing**, per community: its share of surveys over the last three complete years against the field's; *survey gap* (< 0.5×), *thin* (< 0.75×), *covered*; communities with fewer than 10 recent papers are not judged; with its latest survey and the survey it cites most | exp15 | 4 gaps, 3 thin of 25 communities (2023–2025) |
 
 **How to present them:**
 - **Read this first:** say which role each paper plays. The classics are what newcomers end up citing; the sources
@@ -302,6 +303,8 @@ uv run --no-sync python src/landscape/orientation.py --run-id dro-pilot   # ~3 s
 - **How people got in:** describe what happened on this map ("entries anchored in the community's literature, and
   with an insider co-author, were taken up more; unusual methods and new problems less, over three years"), with
   examples. It is not advice that guarantees an outcome.
+- **Where a survey is missing:** a status with its evidence. A survey written where surveys are scarce has been
+  taken up by others far more often (experiment 15), cited rather than built on. It is a gap to fill, not a guarantee.
 - **Lasting:** a small marker with its evidence. Breadth at publication is the clearest trait of ideas still used
   5+ years later; novel ideas fade faster, and early citations say nothing.
 
