@@ -337,7 +337,7 @@ def _my_paper(p: str, pid: str, source: str) -> dict:
     hc = home.cluster_id.tolist()
     bring = []
     if hc:
-        b = q("""SELECT signal_type, subject, score FROM signals WHERE run_id = ?
+        b = q("""SELECT signal_type, subject, features, score FROM signals WHERE run_id = ?
                  AND signal_type IN ('bridge_paper', 'bridge_paper_gem')""", (p,))
         b["s"] = b.subject.map(jl)
         b = b[b.s.map(lambda x: x["cluster_id"]) == hc[0]]
@@ -349,8 +349,9 @@ def _my_paper(p: str, pid: str, source: str) -> dict:
         tt = titles(b.paper_id)
         bring = [{"paper_id": x, "title": s.get("title"), "year": tt.get(x, {}).get("year"),
                   "list": {"bridge_paper": "likely", "bridge_paper_gem": "hidden gem"}[t],
-                  "fit": None if pd.isna(f) else round(float(f), 3)}
-                 for x, s, t, f in zip(b.paper_id, b.s, b.signal_type, b.fit)]
+                  "fit": None if pd.isna(f) else round(float(f), 3), "status": jl(ft).get("status"),
+                  "age": jl(ft).get("age"), "cites": jl(ft).get("citations_so_far")}
+                 for x, s, t, f, ft in zip(b.paper_id, b.s, b.signal_type, b.fit, b.features)]
     out["bring_in"] = bring
 
     methods = []

@@ -1,0 +1,50 @@
+{
+  "name": "hidden_gems",
+  "features": [
+    "lpop",
+    "lcoup",
+    "prob_sim",
+    "lim_sim3_f",
+    "age",
+    "being_taken",
+    "closeness"
+  ],
+  "mean": [
+    0.192911,
+    1.535171,
+    0.870592,
+    0.796075,
+    1.968686,
+    0.127172,
+    0.872428
+  ],
+  "scale": [
+    0.310646,
+    1.428627,
+    0.021906,
+    0.020222,
+    3.014515,
+    0.333165,
+    0.021848
+  ],
+  "coef": [
+    0.235794,
+    0.720195,
+    0.322494,
+    0.080763,
+    -0.569992,
+    -0.008266,
+    0.610424
+  ],
+  "intercept": -1.1568591184773054,
+  "trained_on": [
+    2020,
+    2021,
+    2022,
+    2023
+  ],
+  "n_rows": 163220,
+  "n_positive": 1489,
+  "run": "dro-pilot",
+  "note": "P(X cites a paper cited at most once so far within 3 years | not cited yet), with whether X's recent statements already reach the paper's innovation. Estimates for this run: Experiments view, experiment 30 (pilot: p@500 0.138 vs 0.102 without the status, leave-one-cutoff-out; 0.072 vs 0.046 chronological)."
+}

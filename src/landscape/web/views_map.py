@@ -219,7 +219,8 @@ def paper_bridges(p: str) -> dict:
             "rank": int(r.rank), "paper_id": r.subj["paper_id"], "title": r.subj.get("title") or r.subj["paper_id"],
             "from": all_labs.get(r.subj.get("from_cluster"), ""), "cites": f.get("citations_so_far"),
             "score": round(float(r.score), 2), "coupling": f.get("coupling"), "problem_sim": f.get("problem_sim"),
-            "limitation_sim": f.get("limitation_sim"), "best_matching_limitation": f.get("best_matching_limitation")})
+            "limitation_sim": f.get("limitation_sim"), "best_matching_limitation": f.get("best_matching_limitation"),
+            "status": f.get("status"), "age": f.get("age"), "closeness": f.get("closeness")})
     return {"clusters": clusters, "lists": lists}
 
 

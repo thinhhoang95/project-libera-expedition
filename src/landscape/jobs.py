@@ -112,9 +112,14 @@ CATALOG: list[Step] = [
          ("script", "scripts/run_experiments.py", "--step", "experiments-10"),
          "Entry routes, reading paths, durable ideas, survey gaps, quiet foundations, tools, applications, crowding "
          "and the rest. Needs the 2019 cutoff; two LLM reads, about $0.55 once (cached).", optional=True),
+    Step("experiments-11", "Time experiments 29–30", "11",
+         ("script", "scripts/run_experiments.py", "--step", "experiments-11"),
+         "Does an opportunity's age change its payoff, and is it still open, being taken or already closed? Needs "
+         "the 2019 cutoff and the signal experiments.", optional=True),
     Step("fit-models", "Fit this field's models", "8b", ("script", "scripts/phase8b/fit_models.py"),
-         "Paper bridges, early work and community warmth refitted on this project's cutoffs, replacing the pilot's "
-         "models for it. Needs the signal experiments; run Signals and Portfolio afterwards.", optional=True),
+         "Paper bridges, hidden gems, early work and community warmth refitted on this project's cutoffs, replacing "
+         "the pilot's models for it. Needs the signal experiments (and the time experiments for hidden gems); run "
+         "Signals and Portfolio afterwards.", optional=True),
     Step("freeze-snapshot", "Freeze a snapshot", "9", ("script", "scripts/phase8b/freeze_snapshot.py"),
          "Today's lists and their baselines, hashed, for a prospective test scored at 6, 12 and 24 months. Run "
          "after the portfolio (and experiment 8 for the birth list).", optional=True),
@@ -126,7 +131,7 @@ TEMPLATES = {
     # artefacts that read experiment tables (entry effects, experiment 12) pick them up
     "full": [s.name for s in CATALOG if s.name not in ("fit-models", "freeze-snapshot")] + ["portfolio"],
     "experiments": ["backtest", "prepare-cutoffs", "research-lab", "experiments-8", "experiments-8b", "experiments-10",
-                    "portfolio"],
+                    "experiments-11", "portfolio"],
     "own-models": ["fit-models", "signals", "portfolio"],
     "refresh": ["signals", "external", "portfolio"],
 }

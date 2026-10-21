@@ -3,7 +3,7 @@
     uv run python scripts/run_experiments.py --step experiments-8b --run-id my-field   [--list]
 
 Steps: experiments-8 (Phase 8 backtest analyses), experiments-8b (signal experiments 1-11), experiments-10
-(orientation experiments 12-28). The job queue runs them as optional pipeline steps (src/landscape/jobs.py).
+(orientation experiments 12-28), experiments-11 (time experiments 29-30). The job queue runs them as optional pipeline steps (src/landscape/jobs.py).
 
 - Each script runs in its own process from the repository root with --run-id, so it opens the database itself
   (read-only, except fetch_counts_by_year.py, which logs its OpenAlex calls).

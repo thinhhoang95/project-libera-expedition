@@ -128,6 +128,16 @@ innovation.
 
 Evidence is the top-5 limitation ↔ innovation pairs, stored in `features.pairs`.
 
+**Closed pairs are excluded** (experiment 30). An innovation that X already cites (as of T) is not paired with X's
+limitations. Such closed items were 10% of the list and supplied 44% of its backtest hits. Without them, top-20
+precision is 0.112 (strict hit) rather than 0.150; on the pilot this removed 18 of 200 items.
+
+Each item also carries `features.status`:
+- **being taken**: X's method or innovation statements of T−2..T come within 0.894 of a listed innovation, and closer
+  than those of T−5..T−3 (`Ctx.reach`);
+- **open**: otherwise;
+- `features.closeness` holds the closest such cosine.
+
 ### (b) Method transfer (`bridge_method_transfer`)
 
 Candidates are empty cells, M(P, m) = 0, of the problem × method matrix (α = 0.5, medium).
@@ -182,7 +192,15 @@ X start citing?
   top-3 similarity to X's limitations (with the 20% most generic dropped), and age.
 - **Lists per cluster:**
   - `bridge_paper`: the 10 most likely (`paper_bridges_per_cluster`).
-  - `bridge_paper_gem`: the top 5 among papers cited at most once (`paper_bridges_gems_per_cluster`).
+  - `bridge_paper_gem`: the top 5 among papers cited at most once (`paper_bridges_gems_per_cluster`), ranked by
+    their own model (`models/hidden_gems.json`) when it exists. That model adds `being_taken` and `closeness` (X's
+    recent statements reaching the paper's innovation, `Ctx.reach`) to the five features.
+    - Experiment 30: p@500 0.138 vs 0.102 without these features (leave-one-cutoff-out); 0.072 vs 0.046
+      chronological.
+    - Its age coefficient is negative (−0.57): uncited papers lose pull with age (experiment 29).
+    - Without the model file, gems fall back to the paper-bridges model.
+- **Row features:** every row carries `age`, `status` (being taken / open) and `closeness`. The web app shows them as
+  badges.
 - **Evidence:** the innovation paper and X's best-matching limitation
   (`features.best_matching_limitation`).
 - **Backtest** (leave-one-cutoff-out): p@10 per cluster 0.23 vs popularity 0.19 and random

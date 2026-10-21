@@ -2,7 +2,8 @@
 
 Inputs: data/projects/<run>/backtest/exp1_pairs.parquet, exp2_papers.parquet and community_warmth_model.json (run the
 Phase 8b experiments first: pipeline step experiments-8b; --run-id, default dro-pilot).
-Output: data/projects/<run>/models/{paper_bridges,early_work,community_warmth}.json, which signals.py and
+Output: data/projects/<run>/models/{paper_bridges,hidden_gems,early_work,community_warmth}.json (hidden_gems needs
+experiment 30's exp30_paper_bridges.parquet: step experiments-11), which signals.py and
 portfolio.py then use for the run and its cutoff runs instead of the committed pilot models (config.model_file).
 Run `signals` and `portfolio` afterwards for the lists to use them (template "own-models" does all three).
 With --as-default the models replace the committed defaults in src/landscape/models/ (the pilot's, for every
@@ -54,6 +55,19 @@ fit(d1, ["lpop", "lcoup", "prob_sim", "lim_sim3_f", "age"], "hit", "paper_bridge
     "P(problem cluster X cites innovation paper i within 3 years | not cited yet). "
     "Leave-one-cutoff-out estimates for this run: Experiments view, experiment 1 (pilot: p@10 per cluster 0.234, "
     "popularity 0.186, AUC 0.84).")
+
+status = WORK / "exp30_paper_bridges.parquet"
+if status.exists():
+    s = pd.read_parquet(status, columns=["T", "X", "i", "r", "status"])
+    g = d1.merge(s, on=["T", "X", "i"])
+    g = g[g["pop"] <= 1].assign(being_taken=lambda x: (x.status == "being taken").astype(float),
+                                closeness=lambda x: x.r)
+    fit(g, ["lpop", "lcoup", "prob_sim", "lim_sim3_f", "age", "being_taken", "closeness"], "hit", "hidden_gems",
+        "P(X cites a paper cited at most once so far within 3 years | not cited yet), with whether X's recent "
+        "statements already reach the paper's innovation. Estimates for this run: Experiments view, experiment 30 "
+        "(pilot: p@500 0.138 vs 0.102 without the status, leave-one-cutoff-out; 0.072 vs 0.046 chronological).")
+else:
+    print(f"hidden_gems: no {status.name} (run experiments-11); gems keep the paper_bridges model")
 
 d2 = pd.read_parquet(WORK / "exp2_papers.parquet")
 feats2 = ["l_cites_so_far", "l_coupling", "l_n_refs", "cluster_E", "centrality", "novelty", "l_n_authors",

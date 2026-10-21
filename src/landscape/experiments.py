@@ -1,4 +1,4 @@
-"""Saved results of the experiments (scripts/phase8/, phase8b/, phase10/, and the research lab's semantic ablation),
+"""Saved results of the experiments (scripts/phase8/, phase8b/, phase10/, phase11/, and the research lab's semantic ablation),
 one folder per run.
 
 Every experiment is run on one corpus, so its results describe that corpus: another field may
@@ -52,6 +52,10 @@ PILOT_DECISIONS = {
     "exp26_tempo": "not adopted: tempo is not a stable trait (hint only)",
     "exp27_testbeds": "not demonstrated: abstracts rarely name shared testbeds",
     "exp28_disagreements": "not demonstrated: 2 conflicts in 3,360 same-question pairs; needs full texts",
+    "exp29_opportunity_age": "describe: uncited papers lose half their pull by 3-5 years (badge, not re-rank); method "
+                             "transfer needs a 5-year horizon; limitation age adds nothing once closure is known",
+    "exp30_still_open": "adopted: already-cited innovations dropped from limitation -> innovation; hidden gems ranked "
+                        "with the being-taken status (models/hidden_gems.json); method-transfer proximity adds nothing",
     "lab_semantic_ablation": "findings: semantics adds most for uncited papers (paper bridges, chronological test)",
 }
 ORDER = list(PILOT_DECISIONS)
@@ -59,7 +63,8 @@ ORDER = list(PILOT_DECISIONS)
 # Every experiment script in run order: (pipeline step, script from the repo root, fixed arguments, experiments whose
 # tables it feeds). Each takes --run-id; scripts/run_experiments.py runs one step's scripts in this order. The
 # Phase 8 analyses need the backtest's cutoff runs; Phase 8b also needs `external` (exp6); Phase 10 also needs the
-# 2019 cutoff (prepare-cutoffs) and makes the only paid calls (exp24, exp28: about $0.55 once, cached).
+# 2019 cutoff (prepare-cutoffs) and makes the only paid calls (exp24, exp28: about $0.55 once, cached); Phase 11
+# needs the 2019 cutoff and experiment 1's candidate pairs (experiments-8b).
 RUNS: list[tuple[str, str, tuple[str, ...], tuple[str, ...]]] = [
     ("experiments-8", "scripts/phase8/route_robustness.py", (), ("phase8_route_robustness",)),
     ("experiments-8", "scripts/phase8/loco_feature_selection.py", (), ("phase8_direction",)),
@@ -97,6 +102,8 @@ RUNS: list[tuple[str, str, tuple[str, ...], tuple[str, ...]]] = [
     ("experiments-10", "scripts/phase10/exp26_tempo.py", (), ("exp26_tempo",)),
     ("experiments-10", "scripts/phase10/exp27_testbeds.py", (), ("exp27_testbeds",)),
     ("experiments-10", "scripts/phase10/exp28_disagreements.py", (), ("exp28_disagreements",)),
+    ("experiments-11", "scripts/phase11/exp29_opportunity_age.py", (), ("exp29_opportunity_age",)),
+    ("experiments-11", "scripts/phase11/exp30_still_open.py", (), ("exp30_still_open",)),
 ]
 STEP_SCRIPTS: dict[str, list[tuple[str, tuple[str, ...]]]] = {}
 SCRIPTS: dict[str, list[str]] = {"lab_semantic_ablation": ["scripts/phase8c/semantic_ablation.py"]}

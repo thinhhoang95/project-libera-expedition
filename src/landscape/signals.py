@@ -27,6 +27,9 @@ from .identity import work_aliases
 from .llm import LLMBudgetExceeded, OpenRouter
 
 log = logging.getLogger(__name__)
+# a statement this close to an innovation "reaches" it: 99th percentile of random innovation-method cosine, 256-d
+# (experiment 9); experiment 30 builds the being-taken status on it
+REACH = 0.894
 
 
 def z(x) -> np.ndarray:
@@ -86,6 +89,26 @@ class Ctx:
 
     def in_variant(self, ids: pd.Series, variant: str) -> pd.Series:
         return ids.map(self.route) != "semantic" if variant == "no_semantic" else pd.Series(True, index=ids.index)
+
+    def reach(self, members, T: int, targets: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Experiment 30's status of target innovations (256-d) for one community: the closest any of its method or
+        innovation statements of T-2..T comes to each target, and whether that is at least REACH and closer than its
+        statements of T-5..T-3 came (*being taken*: the community is converging on the idea, cited or not)."""
+        if not hasattr(self, "_stmt"):
+            pos, rows = defaultdict(list), []
+            for f in ("method", "innovation"):
+                ids, v = embed.load_vectors(f, ids=self.papers.paper_id.tolist(), version=self.p.embedding.version)
+                for k, x in enumerate(ids):
+                    pos[x].append(len(rows) + k)
+                rows.append(embed.truncate(v, 256))
+            self._stmt = (pos, np.vstack(rows))
+        pos, V = self._stmt
+
+        def closest(lo, hi):
+            r = [k for x in members if lo <= self.year.get(x, -1) <= hi for k in pos.get(x, ())]
+            return (targets @ V[r].T).max(1) if r and len(targets) else np.full(len(targets), -1.0)
+        rec, old = closest(T - 2, T), closest(T - 5, T - 3)
+        return rec, (rec >= REACH) & (rec > old)
 
 
 # =============================================================== paper novelty (6.2)
@@ -307,6 +330,18 @@ def bridges(ctx: Ctx, T: int) -> list[dict]:
         ic = np.array([pcl[x] for x in iid])
         S = lv @ iv.T
         valid = (iy[None, :] >= ly[:, None]) & (ic[None, :] != lc[:, None])
+        # an innovation the limitation's community already cites is no longer an opportunity for it: such closed
+        # items carried 44% of this list's backtest hits while being 10% of it (experiment 30)
+        e = ctx.edges.assign(cy=ctx.edges.citing_id.map(ctx.year), X=ctx.edges.citing_id.map(pcl))
+        cited = e[e.cy <= T].dropna(subset=["X"]).groupby("X").cited_id.apply(set)
+        ipos = {x: k for k, x in enumerate(iid)}
+        ucl = np.unique(lc)
+        C = np.zeros((len(ucl), len(iid)), dtype=bool)
+        for k, X in enumerate(ucl):
+            C[k, [ipos[x] for x in cited.get(X, ()) if x in ipos]] = True
+        valid &= ~C[np.searchsorted(ucl, lc)]
+        i256 = embed.truncate(iv, 256)
+        members_of = prob.groupby("cluster_id").paper_id.apply(list)
         lim_inn_sims = S[valid]
         for X in np.unique(lc):
             rX = np.where(lc == X)[0]
@@ -328,11 +363,15 @@ def bridges(ctx: Ctx, T: int) -> list[dict]:
                 # (median 1.5 existing citations) while ranking better (08-backtest.md)
                 score = topm * (1 - fx.get(Y, 0) / (fmax + 1)) ** sp.lim_flow_penalty_power
                 pairs = [(lid[rX[t // len(cY)]], iid[cY[t % len(cY)]], round(float(flat[t]), 4)) for t in top]
+                inns = list(dict.fromkeys(i for _, i, _ in pairs))
+                close, taken = ctx.reach(members_of.get(X, []), T, i256[[ipos[i] for i in inns]])
                 rows.append(_row(ctx, "bridge_lim_inn", {"from_cluster": X, "to_cluster": Y,
                                                           "from_label": ctx.label.get(X), "to_label": ctx.label.get(Y)},
                                  score, 0, {"mean_topk_sim": round(topm, 4), "flow_xy": int(fx.get(Y, 0)),
                                             "flow_max": int(fmax),
                                             "pairs": [{"limitation": l, "innovation": i, "sim": s} for l, i, s in pairs],
+                                            "status": "being taken" if taken.any() else "open",
+                                            "closeness": round(float(close.max()), 4),
                                             "kinds": [ctx.kind.get(X), ctx.kind.get(Y)]},
                                  [p for l, i, _ in pairs for p in (l, i)], T))
 
@@ -696,7 +735,8 @@ def _ref_matrix(ctx: Ctx, paper_ids: list[str]):
 def paper_bridges(ctx: Ctx, T: int) -> list[dict]:
     """Per problem cluster X: innovation papers no X paper cites yet, ranked by the backtested
     adoption model (popularity, bibliographic coupling with X, similarity to X's problems and to its
-    stated limitations, age). 'Hidden gems' are candidates cited at most once in the corpus."""
+    stated limitations, age). 'Hidden gems' are candidates cited at most once in the corpus, ranked by their own
+    model, which adds whether X is already converging on the paper's idea (Ctx.reach, experiment 30)."""
     sp, ver = ctx.sp, ctx.p.embedding.version
     prob = ctx.assignment("problem", sp.bridge_alpha).dropna(subset=["cluster_id"])
     prob = prob[prob.year <= T]
@@ -722,6 +762,7 @@ def paper_bridges(ctx: Ctx, T: int) -> list[dict]:
     qid, qv = embed.load_vectors("problem", ids=list(lab.index), version=ver)
     if not iid or not qid:
         return []
+    i256 = embed.truncate(iv, 256)
     if len(lid):
         gc = lv.mean(axis=0)
         gc /= np.linalg.norm(gc)
@@ -758,31 +799,38 @@ def paper_bridges(ctx: Ctx, T: int) -> list[dict]:
         S = iv[idx] @ Lv.T if len(Lv) else None
         prob_sim = iv[idx] @ qc
         lim3 = np.sort(S, axis=1)[:, -3:].mean(axis=1) if S is not None and S.shape[1] else prob_sim
+        close, taken = ctx.reach(members, T, i256[idx])
         feats = pd.DataFrame({
             "lpop": np.log1p([pop.get(iid[k], 0) for k in idx]),
             "lcoup": np.log1p(coup[cix[X], idx] * 100), "prob_sim": prob_sim, "lim_sim3_f": lim3,
-            "age": [T - ctx.year[iid[k]] for k in idx]})
+            "age": [T - ctx.year[iid[k]] for k in idx], "being_taken": taken.astype(float), "closeness": close})
         sc = model_score("paper_bridges", feats, ctx.run_id)
-        # two lists per cluster: most likely adoptions, and hidden gems (cited at most once so far),
-        # ranked by the same model (long-tail AUC 0.84 in the backtest)
-        order = np.argsort(-sc)
-        seen_works = set()
-        distinct = []
-        for j in order:
-            work = aliases.get(iid[idx[j]], iid[idx[j]])
-            if work not in seen_works:
-                seen_works.add(work)
-                distinct.append(j)
-        order = distinct
-        gems = [j for j in order if feats.lpop.iloc[j] <= np.log1p(1)][:sp.paper_bridges_gems_per_cluster]
+        # two lists per cluster: most likely adoptions, and hidden gems (cited at most once so far). Gems have
+        # their own model with the being-taken status when one is fitted (experiment 30: p@500 0.102 -> 0.138
+        # LOCO, 0.046 -> 0.072 chronological); otherwise the same model (long-tail AUC 0.84)
+        gsc = model_score("hidden_gems", feats, ctx.run_id) if model_file(ctx.run_id, "hidden_gems").exists() else sc
+
+        def distinct(order):
+            seen_works, out = set(), []
+            for j in order:
+                work = aliases.get(iid[idx[j]], iid[idx[j]])
+                if work not in seen_works:
+                    seen_works.add(work)
+                    out.append(j)
+            return out
+        order = distinct(np.argsort(-sc))
+        gems = [j for j in distinct(np.argsort(-gsc))
+                if feats.lpop.iloc[j] <= np.log1p(1)][:sp.paper_bridges_gems_per_cluster]
         picks = [(j, False) for j in order[:sp.paper_bridges_per_cluster]] + [(j, True) for j in gems]
         for rank, (j, gem_list) in enumerate(picks, 1):
             i = iid[idx[j]]
             best_lim = Lids[int(np.argmax(S[j]))] if S is not None and S.shape[1] else None
             rows.append(_row(ctx, "bridge_paper_gem" if gem_list else "bridge_paper", {"cluster_id": X, "label": ctx.label.get(X), "paper_id": i,
                                                    "title": titles.get(i), "from_cluster": cX[idx[j]]},
-                             float(sc[j]), rank,
+                             float(gsc[j] if gem_list else sc[j]), rank,
                              {"citations_so_far": int(pop.get(i, 0)), "hidden_gem": bool(pop.get(i, 0) <= 1),
+                              "age": int(feats.age.iloc[j]), "status": "being taken" if taken[j] else "open",
+                              "closeness": round(float(close[j]), 4),
                               "coupling": round(float(coup[cix[X], idx[j]]), 4),
                               "problem_sim": round(float(prob_sim[j]), 4), "limitation_sim": round(float(lim3[j]), 4),
                               "best_matching_limitation": best_lim, "kind": ctx.kind.get(X)},

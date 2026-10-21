@@ -71,17 +71,18 @@ The optional steps come after it:
 | `experiments-8` | the Phase 8 backtest analyses (`scripts/phase8/`) |
 | `experiments-8b` | signal experiments 1–11 (`scripts/phase8b/`); OpenAlex yearly counts, about $0.02 once |
 | `experiments-10` | orientation experiments 12–28 (`scripts/phase10/`); two LLM reads, about $0.55 once |
+| `experiments-11` | time experiments 29–30 (`scripts/phase11/`): opportunity age, still open; no spend |
 | `fit-models` | refits paper bridges, early work and community warmth on this project (below) |
 | `freeze-snapshot` | freezes today's lists for the prospective test |
 
-The three experiment steps run `scripts/run_experiments.py --step <step>`. It takes the step's scripts
+The four experiment steps run `scripts/run_experiments.py --step <step>`. It takes the step's scripts
 in order from `experiments.RUNS` and runs each one in its own process. It records the scripts already
 done in `backtest/experiments/.progress-<step>.json`, so a failed or interrupted step resumes at the
 first unfinished script. It adds the spend that experiments 24 and 28 report to the run's spend. Every
 table lands in the Experiments view. That page also queues a step whose experiments have no results yet,
 or re-runs the step behind any table.
 
-**Models.** Paper bridges, early work and community warmth are logistic models.
+**Models.** Paper bridges, hidden gems, early work and community warmth are logistic models. The hidden-gem model needs experiment 30's table (`experiments-11`); without it, gems use the paper-bridges model.
 - The committed models in `src/landscape/models/` were fitted on the pilot and serve every project by
   default.
 - `fit-models` fits a project's own from its signal experiments into `projects/<project>/models/`.

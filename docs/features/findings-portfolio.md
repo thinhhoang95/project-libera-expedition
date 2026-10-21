@@ -1,7 +1,7 @@
 # Findings portfolio: what the experiments say, and where it lives in the product
 
 2026-10-21 · Pilot: `dro-pilot` (Wasserstein DRO, 5,410 papers) · Sources: [08-backtest.md](08-backtest.md),
-[08b-signal-experiments.md](08b-signal-experiments.md), [08c-research-lab.md](08c-research-lab.md)
+[08b-signal-experiments.md](08b-signal-experiments.md), [08c-research-lab.md](08c-research-lab.md), [12-time-experiments.md](12-time-experiments.md)
 
 This page collects every experiment so far into one list and links each finding to a product
 surface. Everything below was measured on **one corpus**. That corpus was sampled from the seed's
@@ -61,6 +61,8 @@ explorer's **Experiments** view keeps every result table open and re-runnable (`
 | 39 | **Community tempo** | exp26: tempo is not a stable trait (rank correlation 0.13 [−0.09, +0.33]); building on recent ideas helps staying in fast communities (+4.4 [+0.9, +7.9]) but not uptake | Not adopted (hint only) | — |
 | 40 | **Standard testbeds** | exp27: abstracts rarely name shared testbeds (1.8% of papers); no detectable payoff | Not demonstrated | — |
 | 41 | **Open disagreements** | exp28: 2 conflicts in 3,360 same-question pairs (both genuine, e.g. 1/N vs mean-variance); untestable | Not demonstrated; needs full texts | — |
+| 42 | **Opportunity age** (does old evidence convert as well as fresh?) | exp29 ([12-time-experiments.md](12-time-experiments.md)): uncited papers lose pull fast: gems aged 3–5 y convert at about half their score's promise (O/E 0.42–0.54, same at every cutoff), works 6+ y old above it (second waves); age bands do not re-rank (AUC +0.002). Limitation age adds nothing once closure is known. Method transfer: 31 hits, too few; it fills over about 5 years (twice the 3-year hits, 64% late when exposure is fresh) | Describe: show ages and a "fades after 3 years" note; score method transfer at 5 years | *uncited N y* badge on paper lists |
+| 43 | **Still open, being taken or closed** | exp30: 10% of limitation → innovation items are already cited at the cutoff and supply 44% of its hits; open-only top-20 precision 0.112 (strict) vs 0.150 as listed; open items are cited at 1.7% (O/E 0.20). Gems whose community is already converging without citing are cited 7× as often; the status lifts the gem model's p@500 0.102 → 0.138 (LOCO) and 0.046 → 0.072 (chronological). Method-transfer proximity adds nothing | Use: closed limitation → innovation items dropped; gems ranked with the status | Status badges: Start here › Opportunities, Map & grid › Bridges, My paper › Papers to bring in; `models/hidden_gems.json` |
 
 ## Borrowed ideas (exp6)
 
@@ -110,6 +112,8 @@ explorer's **Experiments** view keeps every result table open and re-runnable (`
   well-connected work. The review buttons (worth pursuing / obvious / wrong) are the endpoint
   that matters; the recipe's 30% useful-and-non-obvious target is still unmeasured.
 - **Before claiming trends,** collect an independent, year-balanced field sample.
+- **Date every opportunity** (exp29, exp30). Show the age of its evidence and whether it is open, being taken or
+  already closed. Closed items are not opportunities, and they inflated the limitation → innovation backtest.
 
 ## Protocols, for reading the numbers
 
