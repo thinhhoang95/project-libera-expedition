@@ -4,9 +4,9 @@ The engine takes a seed paper and builds an evidence-backed map of its field. Th
 is in [docs/build_recipe.md](docs/build_recipe.md). This repository implements **Phases 1–5**:
 ingestion, corpus expansion, LLM facet extraction, embeddings, and the core analytical
 objects. It also implements **Phase 6** signals (direction, emergence, niches, bridges with an
-LLM judge, influence) and a **Phase 6b** explorer prototype that shows each signal as a layer,
-with corpus, facet and cluster review views. Phases 7 (integrity) and 8 (backtest) are not
-built. Feature docs are in
+LLM judge, influence), a **Phase 6b** explorer prototype that shows each signal as a layer
+(with corpus, facet and cluster review views), and a **Phase 8** backtest on the existing
+corpus (see [08-backtest.md](docs/features/08-backtest.md)). Phase 7 (integrity) is not built. Feature docs are in
 [docs/features/](docs/features/).
 
 ## Setup
@@ -38,6 +38,7 @@ uv run landscape embed    --run-id dro-pilot   # Phase 4 + tag normalization
 uv run landscape core     --run-id dro-pilot   # Phase 5
 uv run landscape viz      --run-id dro-pilot   # Phase 6b: fixed UMAP layouts for the explorer
 uv run landscape signals  --run-id dro-pilot   # Phase 6: signals, LLM judge, explorer layer tables
+uv run landscape backtest --run-id dro-pilot   # Phase 8: cutoffs 2020-2023, precision@k vs baselines
 uv run landscape status   --run-id dro-pilot
 uv run landscape explorer                      # http://localhost:8501 (close it before pipeline steps)
 ```
@@ -55,4 +56,5 @@ Every step is incremental and cached, so re-running a step only does the missing
 | `core.py` | 5: clusters, matrix, time slices, citation flows, author profiles |
 | `signals.py` | 6: direction, emergence, niches, bridges + judge, influence |
 | `viz.py`, `app.py` | 6b: layout precompute and the Streamlit explorer |
+| `backtest.py`, `scripts/phase8/` | 8: cutoff runs, outcomes, precision@k, analysis scripts |
 | `cli.py` | one sub-command per phase |

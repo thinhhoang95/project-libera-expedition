@@ -178,6 +178,7 @@ def cluster_signals_at(ctx: Ctx, facet: str, alpha: float, T: int, variant: str,
             "cluster_id": c, "kind": ctx.kind.get(c), "label": ctx.label.get(c),
             "n_total": int(len(grp)), "activity": int(((grp.year >= T - 2) & (grp.year <= T)).sum()),
             "share_T": n.get(T, 0) / max(N.get(T, 0), 1), "bucket_years": b,
+            "momentum": n.get(T, 0) / max(N.get(T, 0), 1) - n.get(T - 1, 0) / max(N.get(T - 1, 0), 1),
             "g": g, "dg": g - g_prev if not (np.isnan(g) or np.isnan(g_prev)) else np.nan,
             "mig_in": int(inflow.get(c, 0)), "mig_out": int(outflow.get(c, 0)),
             "mig_net": int(inflow.get(c, 0) - outflow.get(c, 0)),
@@ -188,15 +189,24 @@ def cluster_signals_at(ctx: Ctx, facet: str, alpha: float, T: int, variant: str,
         })
     df = pd.DataFrame(rows)
     elig = df.n_total >= sp.emergence_min_size
-    df["E"] = np.nan
-    df.loc[elig, "E"] = (z(df.loc[elig, "g"]) + z(df.loc[elig, "dg"]) + z(df.loc[elig, "new_author_share"])
-                         - z(df.loc[elig, "ref_age"]) + z(df.loc[elig, "novelty"]))
+    # recipe score, kept for comparison; the Phase 8 backtest found it anti-predictive here
+    df["E_recipe"] = np.nan
+    df.loc[elig, "E_recipe"] = (z(df.loc[elig, "g"]) + z(df.loc[elig, "dg"]) + z(df.loc[elig, "new_author_share"])
+                                - z(df.loc[elig, "ref_age"]) + z(df.loc[elig, "novelty"]))
+    # backtested score (docs/features/08-backtest.md): only features whose sign held across
+    # cutoffs and across outcome samples drawn from different expansion routes
+    df["E_backtested"] = np.nan
+    df.loc[elig, "E_backtested"] = sum(w * z(df.loc[elig, f]) for f, w in sp.emergence_weights.items())
+    df["E"] = df["E_backtested"] if sp.emergence_score == "backtested" else df["E_recipe"]
+    # direction uses the same score (growth = positive), for clusters big enough to trend
+    df["D"] = np.where(df.n_total >= sp.direction_min_size, df.E, np.nan) if sp.emergence_score == "backtested" else df.g
     df["N"] = z(df.coherence) - z(df.ext_inflow.fillna(df.ext_inflow.median()))
     thr = df.loc[elig, "E"].quantile(sp.emerging_quantile) if elig.any() else np.inf
+    rising = df.momentum > 0 if sp.emergence_score == "backtested" else df.g > 0
     df["status"] = None
     df.loc[(df.N >= sp.niche_z) & (df.activity < sp.a_min), "status"] = "dormant"
     df.loc[(df.N >= sp.niche_z) & (df.activity >= sp.a_min), "status"] = "niche"
-    df.loc[elig & (df.E >= thr) & (df.g > 0), "status"] = "emerging"
+    df.loc[elig & (df.E >= thr) & rising, "status"] = "emerging"
     df["facet"], df["alpha"], df["cutoff_year"], df["variant"] = facet, alpha, T, variant
     return df, mig
 
@@ -223,11 +233,12 @@ def evidence_for(ctx: Ctx, facet: str, alpha: float, cluster_id: str, T: int, k:
 def cluster_signal_rows(ctx: Ctx, df: pd.DataFrame) -> list[dict]:
     """Ranked signal rows at one cutoff/variant; stable and hub clusters ranked separately."""
     out = []
-    feats = ["g", "dg", "mig_net", "mig_in", "mig_out", "ref_age", "new_author_share", "novelty",
-             "coherence", "ext_inflow", "activity", "n_total", "share_T", "E", "N", "status", "bucket_years"]
+    feats = ["g", "dg", "momentum", "mig_net", "mig_in", "mig_out", "ref_age", "new_author_share", "novelty",
+             "coherence", "ext_inflow", "activity", "n_total", "share_T", "E", "E_recipe", "E_backtested",
+             "D", "N", "status", "bucket_years"]
     big = df.n_total >= ctx.sp.direction_min_size
-    specs = [("direction_growing", df.g, big & df.g.notna() & (df.g > 0)),
-             ("direction_shrinking", -df.g, big & df.g.notna() & (df.g < 0)),
+    specs = [("direction_growing", df.D, big & df.D.notna() & (df.D > 0)),
+             ("direction_shrinking", -df.D, big & df.D.notna() & (df.D < 0)),
              ("emerging_cluster", df.E, df.E.notna()),
              ("niche", df.N, df.status == "niche"),
              ("dormant", df.N, df.status == "dormant")]
@@ -312,7 +323,9 @@ def bridges(ctx: Ctx, T: int) -> list[dict]:
                 top = np.argpartition(-flat, k - 1)[:k]
                 top = top[np.argsort(-flat[top])]
                 topm = float(flat[top].mean())
-                score = topm * (1 - fx.get(Y, 0) / (fmax + 1))
+                # recipe uses power 1; the backtest found 0.5 keeps candidates near-missing
+                # (median 1.5 existing citations) while ranking better (08-backtest.md)
+                score = topm * (1 - fx.get(Y, 0) / (fmax + 1)) ** sp.lim_flow_penalty_power
                 pairs = [(lid[rX[t // len(cY)]], iid[cY[t % len(cY)]], round(float(flat[t]), 4)) for t in top]
                 rows.append(_row(ctx, "bridge_lim_inn", {"from_cluster": X, "to_cluster": Y,
                                                           "from_label": ctx.label.get(X), "to_label": ctx.label.get(Y)},
@@ -661,8 +674,9 @@ def viz_tables(ctx: Ctx, statuses: pd.DataFrame, migrations: list[pd.DataFrame])
     st_all = statuses[statuses.variant == "all"]
     cy = con.execute("SELECT cluster_id, year, n, share FROM cluster_year WHERE run_id = ?", [run]).df()
     sc = st_all.rename(columns={"cutoff_year": "year"})
-    sc["scores"] = sc.apply(lambda r: json.dumps({k: _clean(r[k]) for k in ("g", "dg", "E", "N", "mig_net",
-                                                                         "novelty", "ext_inflow")}
+    sc["scores"] = sc.apply(lambda r: json.dumps({k: _clean(r[k]) for k in ("g", "dg", "momentum", "E", "E_recipe",
+                                                                         "D", "N", "mig_net", "new_author_share",
+                                                                         "novelty", "ext_inflow", "ref_age")}
                                                  | {"kind": r["kind"]}), axis=1)
     v = cy.merge(sc[["cluster_id", "year", "status", "scores"]], on=["cluster_id", "year"], how="left")
     store.replace_run_rows(con, "viz_cluster_year", run, v.assign(run_id=run))

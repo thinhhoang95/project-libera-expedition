@@ -87,7 +87,8 @@ def paper_card(pid: str) -> None:
 
 # ------------------------------------------------------------------ sidebar
 
-runs = q("SELECT run_id FROM runs ORDER BY started_at DESC").run_id.tolist()
+# Phase 8 cutoff runs (<run>@T<year>) are internal to the backtest and have no layouts
+runs = q("SELECT run_id FROM runs WHERE run_id NOT LIKE '%@T%' ORDER BY started_at DESC").run_id.tolist()
 if not runs:
     st.error("No runs in the database yet.")
     st.stop()
@@ -278,7 +279,8 @@ def view_map():
                 fig.add_trace(go.Scatter(
                     x=w.x, y=w.y, mode="markers", customdata=w.paper_id,
                     marker=dict(size=11, symbol="circle-open", color="#1f2328", line=dict(width=1.5)),
-                    text=[f"novel ({nf}): {v:.3f}<br>{t[:80]}" for v, t in zip(w.value, w.title.fillna(""))],
+                    text=[f"novel ({nf}): {v:.3f} (descriptive; novelty does not predict 3-year citations)"
+                          f"<br>{t[:80]}" for v, t in zip(w.value, w.title.fillna(""))],
                     hovertemplate="%{text}<extra></extra>", name="novel"))
 
         def window_flows(kind):
@@ -476,7 +478,9 @@ def view_map():
                    "Δ share": st.column_config.NumberColumn(format="percent"),
                    "stability": st.column_config.NumberColumn(format="%.2f"),
                    "g": st.column_config.NumberColumn("growth g", format="%.3f", help="slope of log share, last 3 years"),
-                   "E": st.column_config.NumberColumn("emergence E", format="%.2f"),
+                   "E": st.column_config.NumberColumn("emergence E′", format="%.2f",
+                                                      help="z(momentum) + z(acceleration) − z(new-author share); "
+                                                           "backtested replacement for the recipe's E"),
                    "N": st.column_config.NumberColumn("niche N", format="%.2f"),
                    "mig_net": st.column_config.NumberColumn("net migration"),
                    "cluster_id": None, "kind": None, "share_prev": None}
@@ -609,7 +613,9 @@ def people_panel():
     if ppl.empty:
         st.info("Run `landscape signals`.")
         return
-    st.caption("Internal decision support only: these lists are not a public ranking of people.")
+    st.caption("Internal decision support only: these lists are not a public ranking of people. "
+               "Descriptive roles, not predictions: in the Phase 8 backtest they did not beat "
+               "plain popularity at predicting future citations.")
     for typ, title, col in (("seeder_author", "Seeders", "early papers in growing clusters"),
                             ("broker_author", "Brokers", "participation across clusters"),
                             ("institution_seeder", "Institutions (seeders)", "weighted score"),

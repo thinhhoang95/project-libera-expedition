@@ -176,6 +176,16 @@ def cmd_signals(a, con):
     print(json.dumps(stats, indent=2, default=str))
 
 
+def cmd_backtest(a, con):
+    from .backtest import run_backtest, summarize
+
+    cutoffs = tuple(int(x) for x in a.cutoffs.split(","))
+    df = run_backtest(con, a.run_id, _params(con, a.run_id), cutoffs=cutoffs, rebuild=a.rebuild)
+    import pandas as pd
+    with pd.option_context("display.width", 200, "display.max_rows", 500, "display.max_colwidth", 45):
+        print(summarize(df).to_string(index=False))
+
+
 def cmd_viz(a, con):
     from .viz import build_viz
 
@@ -210,7 +220,7 @@ def main(argv=None):
     s.set_defaults(fn=cmd_new_run)
 
     for name, fn in [("expand", cmd_expand), ("preprints", cmd_preprints), ("semantic", cmd_semantic), ("extract", cmd_extract),
-                     ("qa", cmd_qa), ("embed", cmd_embed), ("core", cmd_core), ("viz", cmd_viz), ("signals", cmd_signals), ("status", cmd_status)]:
+                     ("qa", cmd_qa), ("embed", cmd_embed), ("core", cmd_core), ("viz", cmd_viz), ("signals", cmd_signals), ("backtest", cmd_backtest), ("status", cmd_status)]:
         s = sub.add_parser(name)
         s.add_argument("--run-id", required=True)
         if name == "extract":
@@ -218,6 +228,9 @@ def main(argv=None):
         if name == "expand":
             s.add_argument("--reset", action="store_true",
                            help="drop this run's provenance and refill all routes (responses are cached)")
+        if name == "backtest":
+            s.add_argument("--cutoffs", default="2020,2021,2022,2023")
+            s.add_argument("--rebuild", action="store_true", help="re-fit the cutoff runs")
         if name == "signals":
             s.add_argument("--skip-judge", action="store_true")
         if name == "core":

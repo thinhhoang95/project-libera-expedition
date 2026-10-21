@@ -260,7 +260,8 @@ async def label_clusters(rows: list[dict], inputs: dict, lp: LabelParams) -> tup
 
 # ------------------------------------------------------------------ orchestration
 
-def build_core(con, run_id: str, p: RunParams, skip_labels: bool = False) -> dict:
+def build_core(con, run_id: str, p: RunParams, skip_labels: bool = False,
+               author_centroids: bool = True) -> dict:
     cp, version = p.clusters, p.embedding.version
     corpus = con.execute("""SELECT v.paper_id, p.year FROM provenance v JOIN papers p USING (paper_id)
                             WHERE v.run_id = ?""", [run_id]).df()
@@ -414,7 +415,8 @@ def build_core(con, run_id: str, p: RunParams, skip_labels: bool = False) -> dic
         ay_rows.append(df)
     ay = pd.concat(ay_rows, ignore_index=True) if ay_rows else pd.DataFrame()
     store.replace_run_rows(con, "author_year", run_id, ay.assign(run_id=run_id) if not ay.empty else ay)
-    write_author_year_centroids(au, cp.facets, version, run_id)
+    if author_centroids:
+        write_author_year_centroids(au, cp.facets, version, run_id)
 
     return {
         "clusterings": int(clusters.groupby(["facet", "alpha", "resolution"]).ngroups),

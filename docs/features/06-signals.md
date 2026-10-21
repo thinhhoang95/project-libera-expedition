@@ -65,9 +65,11 @@ cluster (361 papers): blending in the glosses steadies it.
 | `mig_in`, `mig_out`, `mig_net` | authors whose dominant cluster was i in t−1 and j ≠ i in t, summed over T−2…T |
 | `ref_age` | median age of references cited by the cluster's papers in T−2…T (only references whose year is known, i.e. works we fetched) |
 
-- **Signals:** `direction_growing` (ranked by g > 0) and `direction_shrinking` (ranked by −g),
-  for clusters with at least 20 papers. Smaller clusters gave noisy slopes; a 5-paper "AR
-  display" cluster topped the first run.
+- **Signals:** `direction_growing` (E′ > 0, ranked by E′) and `direction_shrinking` (E′ < 0,
+  ranked by −E′), for clusters with at least 20 papers. The recipe ranks by g, which the backtest
+  found below random (mean reversion); the backtested E′ beats every baseline. g is still stored
+  as a feature. Smaller clusters gave noisy slopes; a 5-paper "AR display" cluster topped the
+  first run.
 - **Baseline shift:** not computed. S2 intents cover only 51 papers on the pilot (no S2 key),
   far too few. The edge-level intents are in `refs` for when they become available.
 
@@ -78,10 +80,16 @@ cluster (361 papers): blending in the glosses steadies it.
   in `paper_scores`.
 - **`new_combination`**: problem × method cells whose first nonzero year is within the last 2
   years.
-- **`emerging_cluster`**: `E = z(g) + z(dg) + z(new-author share) − z(ref age) + z(mean novelty)`
-  for clusters with ≥ 10 papers. New-author share is the share of window authors with no earlier
-  paper in the cluster.
-- **Status** `emerging`: E in the top decile and g > 0.
+- **`emerging_cluster`**: ranked by **E′ = z(momentum) + z(dg) − z(new-author share)** for
+  clusters with ≥ 10 papers (`emergence_score = "backtested"`).
+  - The recipe's `E = z(g) + z(dg) + z(new-author share) − z(ref age) + z(mean novelty)` is still
+    computed and stored as `E_recipe`. Set `emergence_score = "recipe"` to rank by it.
+  - The Phase 8 backtest found the recipe's E anti-predictive on the pilot (ρ = −0.22 with the
+    future share change); see [08-backtest.md](08-backtest.md).
+  - Momentum is the share change from T−1 to T. New-author share is the share of window authors
+    with no earlier paper in the cluster.
+- **Status** `emerging`: E′ in the top decile and momentum > 0. Backtested as weak (about at
+  momentum's level), so treat it as a prompt for review, not a prediction.
 
 ## 6.3 Niches
 
@@ -100,8 +108,13 @@ Pilot at 2026 (variant all): 10 emerging, 11 niche, 4 dormant across the four cl
 
 ### (a) Limitation → innovation (`bridge_lim_inn`)
 
-The recipe's formula, `mean_top5 cos(e_lim, e_inn) · (1 − F[X,Y] / (max_Y F[X,Y] + 1))`, over
+The recipe's formula, `mean_top5 cos(e_lim, e_inn) · (1 − F[X,Y] / (max_Y F[X,Y] + 1))^p`, over
 limitation papers in problem cluster X and innovation papers in Y ≠ X published no earlier.
+
+The recipe uses p = 1. The default is now **p = 0.5** (`lim_flow_penalty_power`): in the
+backtest it ranks better (p@50 0.255 vs 0.215) while the top candidates still have a median of
+only 1.5 existing citations between the clusters. This is the best-validated signal: about
+2.4× random, and it beats every baseline.
 
 Deviation: the **20% most generic limitation statements** (closest to the mean limitation
 vector) are dropped first. Statements like "future work is needed" otherwise match every
@@ -163,6 +176,11 @@ all cite each other heavily. The 62 pairs with zero flow are not semantically cl
   Ranked only for papers from 5 years before the first cutoff onward (pilot: 2015+), because
   with corpus-only citers, textbooks and classics trivially score CD ≈ 1. All CD values are in
   `paper_scores`.
+Backtest verdict for this section: seeders, brokers and recent-paper coupling **do not beat
+popularity** as predictors of future citations, so they are descriptive roles, not predictions
+(see [08-backtest.md](08-backtest.md)). Paper novelty is likewise anti-predictive of 3-year
+citations.
+
 - **`seeder_author`**: count of an author's papers among the earliest 10% of clusters whose g is
   above the median.
 - **`broker_author`**: participation coefficient `1 − Σ (k_ac / k_a)²` over clusters, for

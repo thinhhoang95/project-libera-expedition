@@ -118,6 +118,11 @@ class SignalParams:
     # 6.2 / 6.3
     novelty_facets: list = field(default_factory=lambda: ["problem", "method", "innovation", "abstract"])
     emergence_min_size: int = 10
+    # "backtested" (default) or "recipe" (z(g)+z(dg)+z(new authors)-z(ref age)+z(novelty)).
+    # The Phase 8 backtest found the recipe score anti-predictive on the pilot; see 08-backtest.md.
+    emergence_score: str = "backtested"
+    emergence_weights: dict = field(default_factory=lambda: {"momentum": 1.0, "dg": 1.0,
+                                                             "new_author_share": -1.0})
     direction_min_size: int = 20
     emerging_quantile: float = 0.9
     niche_z: float = 1.0
@@ -126,6 +131,7 @@ class SignalParams:
     # 6.4
     bridge_alpha: float = 0.5
     lim_topk: int = 5
+    lim_flow_penalty_power: float = 0.5  # recipe: 1.0
     generic_limitation_drop: float = 0.2  # drop the most generic 20% of limitation statements
     transfer_neighbors: int = 10
     unresolved_min_papers: int = 5
