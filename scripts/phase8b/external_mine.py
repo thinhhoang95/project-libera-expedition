@@ -1,5 +1,5 @@
 """Superseded by the pipeline step `landscape external` (src/landscape/external.py), which writes to
-data/external/<run>/. Kept so the commands in older notes still work.
+data/projects/<run>/external/. Kept so the commands in older notes still work.
 
 Usage: uv run python scripts/phase8b/external_mine.py [fetch] [extract] [embed] [--run-id R] [--min-cites 5]
 """

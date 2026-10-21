@@ -26,13 +26,13 @@ paper already in it). Close the explorer before these steps: DuckDB allows one p
 
 | File | Contents |
 | --- | --- |
-| `data/external/<run>/` | `edges` (every citation from a corpus paper to an outside work), `works` (metadata, abstracts, subfields, yearly global citations), `facets`, `vectors_<facet>` |
-| `data/portfolio/<run>/import_map.parquet` | External citations by the cited work's subfield, three years six years ago vs the last three |
-| `data/portfolio/<run>/live_imports.parquet` | External works with ≥ 3 citing papers in the last three complete years, scored by the experiment-6 model (fitted on the cutoffs at build time); `outside_field` = the third farthest from the corpus's abstracts |
-| `data/portfolio/<run>/warmth.parquet` | For every corpus paper with an innovation statement and every live problem community (α 0.5, medium): the warmth features, score and rank; `home` and `already_citing` flags |
-| `data/portfolio/<run>/second_waves.parquet` | The second-waves watchlist (below) |
-| `data/portfolio/<run>/papers/<id>.json` | One analysed paper: metadata, facets, vectors, warmth rows |
-| `data/portfolio/<run>/summary.json` | As-of year, counts, share of references outside the map |
+| `data/projects/<run>/external/` | `edges` (every citation from a corpus paper to an outside work), `works` (metadata, abstracts, subfields, yearly global citations), `facets`, `vectors_<facet>` |
+| `data/projects/<run>/portfolio/import_map.parquet` | External citations by the cited work's subfield, three years six years ago vs the last three |
+| `data/projects/<run>/portfolio/live_imports.parquet` | External works with ≥ 3 citing papers in the last three complete years, scored by the experiment-6 model (fitted on the cutoffs at build time); `outside_field` = the third farthest from the corpus's abstracts |
+| `data/projects/<run>/portfolio/warmth.parquet` | For every corpus paper with an innovation statement and every live problem community (α 0.5, medium): the warmth features, score and rank; `home` and `already_citing` flags |
+| `data/projects/<run>/portfolio/second_waves.parquet` | The second-waves watchlist (below) |
+| `data/projects/<run>/portfolio/papers/<id>.json` | One analysed paper: metadata, facets, vectors, warmth rows |
+| `data/projects/<run>/portfolio/summary.json` | As-of year, counts, share of references outside the map |
 
 ## Community warmth (experiment 10)
 

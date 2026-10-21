@@ -22,7 +22,7 @@ isolation (distance to the nearest earlier papers); the question is what predict
 
 Cutoffs T = 2019..2022 (outcomes complete through 2025); the cutoff-T communities come from the
 cutoff runs. Also writes a live list (as of the latest complete year) of anchors the model ranks
-highest: data/backtest/<run>/exp8_regions_live.parquet, frozen by freeze_snapshot.py.
+highest: data/projects/<run>/backtest/exp8_regions_live.parquet, frozen by freeze_snapshot.py.
 Usage: --run-id (default dro-pilot); LANDSCAPE_DB may point at a copy of the database.
 """
 import numpy as np

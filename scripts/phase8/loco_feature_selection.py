@@ -2,6 +2,7 @@
 import numpy as np, pandas as pd
 from scipy.stats import spearmanr
 from landscape import store
+from landscape.config import project_dir
 from landscape.backtest import cluster_feature_table
 from landscape.cli import _params
 con = store.connect(); p = _params(con, "dro-pilot")
@@ -42,4 +43,4 @@ for T in CUT:
 r = pd.DataFrame(rows)
 print("features chosen per held-out cutoff:", chosen)
 print(r.groupby("ranking")[[c for c in r.columns if c not in ("cutoff", "scope", "ranking")]].mean().round(3).to_string())
-for k, v in tabs.items(): v.to_parquet(f"data/backtest/cluster_features_{k}.parquet")
+for k, v in tabs.items(): v.to_parquet(project_dir("dro-pilot", "backtest") / f"cluster_features_{k}.parquet")

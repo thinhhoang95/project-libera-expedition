@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 
 from . import embed
-from .config import DATA, VEC_DIR, RunParams
+from .config import RunParams, project_dir, run_vectors
 
 log = logging.getLogger(__name__)
 KS_CLUSTER = (5, 10, 20)
@@ -68,7 +68,7 @@ class Assigner:
 
     def __init__(self, con, run: str, version: str):
         self.con, self.run, self.version = con, run, version
-        cents = pd.read_parquet(VEC_DIR / f"cluster_centroids_{run}.parquet")
+        cents = pd.read_parquet(run_vectors(run) / f"cluster_centroids_{run}.parquet")
         self.cent = dict(zip(cents.cluster_id, cents.centroid))
         self.clusters = con.execute("""SELECT cluster_id, facet, alpha, size, kind FROM clusters
                                        WHERE run_id = ? AND resolution = 'medium'
@@ -350,10 +350,9 @@ def run_backtest(con, base: str, p: RunParams, cutoffs=(2020, 2021, 2022, 2023),
         build_cutoff_run(con, base, T, p, rebuild=rebuild)
         res.append(evaluate_cutoff(con, base, T, p))
     df = pd.concat(res, ignore_index=True)
-    out = DATA / "backtest"
-    out.mkdir(parents=True, exist_ok=True)
-    df.assign(run_id=base).to_parquet(out / f"{base}.parquet")
-    summarize(df).to_csv(out / f"{base}_summary.csv", index=False)
+    out = project_dir(base, "backtest")
+    df.assign(run_id=base).to_parquet(out / "results.parquet")
+    summarize(df).to_csv(out / "summary.csv", index=False)
     return df
 
 

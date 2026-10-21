@@ -11,25 +11,25 @@ cutoffs 2020–2023, score the fourth, repeat), on the existing corpus only (no 
 
 All scripts take `--run-id` (default `dro-pilot`) and read the cutoff runs `<run>@T2020..2023`,
 which `landscape backtest --run-id <run>` builds. Each runs in seconds to minutes and costs nothing
-(no LLM calls). Intermediate tables go to `data/backtest/<run>/`.
+(no LLM calls). Intermediate tables go to `data/projects/<run>/backtest/`.
 
-**Every result table is saved, adopted or not**, to `data/backtest/<run>/experiments/` (with an
+**Every result table is saved, adopted or not**, to `data/projects/<run>/backtest/experiments/` (with an
 `index.json` of titles and how-to-read notes) by `src/landscape/experiments.py`. The explorer's
 **Experiments** view shows them all for the selected run, together with the Phase 8 backtest
 summary. These results describe one corpus: another field may give different answers, so a
 signal dropped on the pilot stays visible and re-runnable.
 
 ```bash
-uv run python scripts/phase8b/exp1_paper_bridges.py   # writes data/backtest/exp1_pairs.parquet
+uv run python scripts/phase8b/exp1_paper_bridges.py   # writes data/projects/<run>/backtest/exp1_pairs.parquet
 uv run python scripts/phase8b/exp1_evaluate.py
-uv run python scripts/phase8b/exp2_early_work.py      # writes data/backtest/exp2_papers.parquet
+uv run python scripts/phase8b/exp2_early_work.py      # writes data/projects/<run>/backtest/exp2_papers.parquet
 uv run python scripts/phase8b/exp3_micro_topics.py
 uv run python scripts/phase8b/exp4_method_transfer.py
 uv run python scripts/phase8b/fit_models.py           # refits the two production models on all cutoffs
 uv run python scripts/phase8b/fetch_counts_by_year.py # exp5 only: OpenAlex yearly counts (~$0.02, cached)
-uv run python scripts/phase8b/exp5_features.py        # writes data/backtest/exp5_papers.parquet
+uv run python scripts/phase8b/exp5_features.py        # writes data/projects/<run>/backtest/exp5_papers.parquet
 uv run python scripts/phase8b/exp5_evaluate.py [logit|hgb] [y_...]
-uv run landscape external --run-id dro-pilot            # exp6 data (~$1.10 LLM once; data/external/<run>/)
+uv run landscape external --run-id dro-pilot            # exp6 data (~$1.10 LLM once; data/projects/<run>/external/)
 uv run python scripts/phase8b/exp6_imports.py         # before exp5_features.py, for the borrowing family
 uv run python scripts/phase8b/exp7_coupling.py        # coupling vs semantics by stratum
 uv run python scripts/phase8b/exp8_birth.py           # community birth (needs exp6 for borrowing features)
@@ -39,7 +39,7 @@ uv run python scripts/phase8b/exp11_leaders.py        # big labs: follow-up wave
 uv run python scripts/phase8b/freeze_snapshot.py      # prospective snapshot (date defaults to today)
 ```
 
-`LANDSCAPE_DB=<copy of data/landscape.duckdb>` lets the scripts run while the explorer holds the lock.
+`LANDSCAPE_DB=<copy of data/shared/landscape.duckdb>` lets the scripts run while the explorer holds the lock.
 
 The production models are fitted on all four cutoffs. The honest accuracy estimates are the
 leave-one-cutoff-out numbers below, not the in-sample fit.
@@ -305,7 +305,7 @@ paper to borrow from them?
   citations; about 75% of each year's external citations go to works cited fewer times.
 - 4,094 works with an abstract got the corpus facet prompt (problem, method, innovation, …).
   All 6,523 were embedded with the corpus model.
-- Everything stays in `data/backtest/<run>/external/`, apart from the corpus tables.
+- Everything stays in `data/projects/<run>/backtest/external/`, apart from the corpus tables.
 
 ### A. Import map
 
@@ -561,7 +561,7 @@ same moment:
 - the birth regions;
 - the corpus ids and the community centroids.
 
-The files are in `data/snapshots/dro-pilot/2026-10-21/`. The manifest, with SHA-256 hashes of
+The files are in `data/projects/dro-pilot/snapshots/2026-10-21/`. The manifest, with SHA-256 hashes of
 every file and the pre-registered scoring protocol (hit definitions; horizons of 6, 12 and 24
 months; comparison with the baselines), is versioned in
 `docs/snapshots/dro-pilot-2026-10-21.json`. It is the only test free of hindsight, model

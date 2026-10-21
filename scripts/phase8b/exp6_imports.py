@@ -15,10 +15,10 @@ B. Lead indicator (predictive, leave-one-cutoff-out). Candidates at cutoff T are
 D. Live list for the explorer (Bridges › From outside the field): at the latest complete year, every
    fetched external work scored by the model fitted on all cutoffs, with its subfield, global trend,
    best-fitting problem cluster, closest corpus paper and the corpus papers citing it lately.
-   Written to data/backtest/<run>/external/live_imports.parquet.
+   Written to data/projects/<run>/backtest/external/live_imports.parquet.
 C. Borrowing style of corpus papers (features for exp5): for each paper, the global trend of the
    external works it cites (as of its year) and how far, semantically and by subfield, it
-   borrows. Written to data/backtest/<run>/exp6_paper_borrowing.parquet for exp5_features.py.
+   borrows. Written to data/projects/<run>/backtest/exp6_paper_borrowing.parquet for exp5_features.py.
 
 Usage: --run-id (default dro-pilot); LANDSCAPE_DB may point at a copy of the database.
 """

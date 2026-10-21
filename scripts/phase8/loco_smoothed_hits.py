@@ -1,6 +1,7 @@
 import numpy as np, pandas as pd
 from scipy.stats import spearmanr
-tabs = {k: pd.read_parquet(f"data/backtest/cluster_features_{k}.parquet") for k in ("all", "forward", "nonforward")}
+from landscape.config import project_dir
+tabs = {k: pd.read_parquet(project_dir("dro-pilot", "backtest") / f"cluster_features_{k}.parquet") for k in ("all", "forward", "nonforward")}
 CUT = (2020, 2021, 2022, 2023)
 FEATS = ["novelty", "new_author_share", "g", "dg", "momentum", "ref_age", "ext_inflow", "coherence", "share_T", "mig_net", "cit_growth", "N"]
 for d in tabs.values():

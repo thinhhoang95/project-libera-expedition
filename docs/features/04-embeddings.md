@@ -38,9 +38,9 @@ Everything is stored at 768 dimensions and unit length.
 
 ## Store layout
 
-- `data/vectors/{facet}.parquet`: `paper_id`, `vector` (FixedSizeList<float32, 768>),
+- `data/shared/vectors/{facet}.parquet`: `paper_id`, `vector` (FixedSizeList<float32, 768>),
   `embedding_model_version`. DuckDB can query these files directly.
-- `data/vectors/{facet}.faiss`: an HNSW index (M = 32, inner product) over the same vectors,
+- `data/shared/vectors/{facet}.faiss`: an HNSW index (M = 32, inner product) over the same vectors,
   with `{facet}.faiss.ids.parquet` holding the row → paper_id mapping.
 - Jobs are incremental: only `(paper_id, facet)` pairs missing for the current model version
   are embedded. If a file contains vectors from another version, it is deleted and rebuilt, so
@@ -57,9 +57,9 @@ Everything is stored at 768 dimensions and unit length.
 ## Derived vectors
 
 - **Author-year centroids** (mean of an author's paper vectors in a year, α = 0, per facet)
-  are written by Phase 5 to `data/vectors/author_year_{facet}_{run_id}.parquet`, keyed
+  are written by Phase 5 to `data/projects/<run>/vectors/author_year_{facet}_{run_id}.parquet`, keyed
   `author_id|year`.
-- **Cluster centroids** (768-d) are written to `data/vectors/cluster_centroids_{run_id}.parquet`.
+- **Cluster centroids** (768-d) are written to `data/projects/<run>/vectors/cluster_centroids_{run_id}.parquet`.
 
 ## Tag normalization
 

@@ -110,7 +110,7 @@ Every experiment's saved result tables for the selected run: the Phase 8 backtes
 Phase 8b experiments, including the ones the pilot dropped. Each table has a short how-to-read
 note and its re-run command, and long tables have filters (outcome, population, level, hit
 definition). The pilot's decisions are listed for reference only, because results depend on the
-corpus. Code: `src/landscape/experiments_view.py`; data: `data/backtest/<run>/experiments/`.
+corpus. Code: `src/landscape/experiments_view.py`; data: `data/projects/<run>/backtest/experiments/`.
 
 The Phase 8b panels in Map & grid (Papers to bring in, Early work, Rising pockets) each have a
 "How to read this" note. The Experiments view opens with the findings portfolio, rendered from
@@ -127,7 +127,7 @@ the experiment-6 model. Scopes:
 A toggle keeps works from the last 10 years. Selecting a work shows its problem, innovation
 and limitation facets, the corpus papers citing it in the last three years, and the closest
 corpus paper's card. Review actions go to `review_actions` (`signal_type = external_import`).
-Data: `data/backtest/<run>/external/live_imports.parquet`.
+Data: `data/projects/<run>/backtest/external/live_imports.parquet`.
 
 **Status badges** are off by default and carry a warning: direction labels depend on how the
 corpus was sampled.

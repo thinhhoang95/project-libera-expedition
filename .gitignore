@@ -7,3 +7,7 @@ __pycache__/
 # macOS AppleDouble files (exFAT drives)
 ._*
 .DS_Store
+
+# web app frontend
+web/node_modules/
+web/dist/

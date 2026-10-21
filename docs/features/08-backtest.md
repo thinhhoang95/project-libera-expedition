@@ -2,7 +2,7 @@
 
 Status: implemented on the existing corpus (no new downloads) · Code: `src/landscape/backtest.py`, analysis scripts in `scripts/phase8/` · CLI: `landscape backtest --run-id dro-pilot [--cutoffs 2020,2021,2022,2023] [--rebuild]`
 
-Output: `data/backtest/<run>.parquet` (every cutoff × signal × ranking) and `<run>_summary.csv`
+Output: `data/projects/<run>/backtest/results.parquet` (every cutoff × signal × ranking) and `summary.csv`
 (averaged over cutoffs).
 
 ## Protocol as built

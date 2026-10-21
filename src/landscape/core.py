@@ -20,7 +20,7 @@ import pandas as pd
 from scipy import sparse
 
 from . import embed, store
-from .config import VEC_DIR, ClusterParams, LabelParams, RunParams
+from .config import ClusterParams, LabelParams, RunParams, run_vectors
 from .llm import LLMBudgetExceeded, OpenRouter
 
 log = logging.getLogger(__name__)
@@ -333,10 +333,9 @@ def build_core(con, run_id: str, p: RunParams, skip_labels: bool = False,
                            assign.drop(columns="year").assign(run_id=run_id))
     store.replace_run_rows(con, "cluster_year", run_id, cy.assign(run_id=run_id))
     store.replace_run_rows(con, "year_totals", run_id, year_totals.assign(run_id=run_id))
-    VEC_DIR.mkdir(parents=True, exist_ok=True)
     pd.DataFrame({"run_id": run_id, "cluster_id": list(all_cents),
                   "centroid": [v.tolist() for v in all_cents.values()]}).to_parquet(
-        VEC_DIR / f"cluster_centroids_{run_id}.parquet")
+        run_vectors(run_id) / f"cluster_centroids_{run_id}.parquet")
 
     med = assign[(assign.resolution == "medium") & assign.cluster_id.notna()]
 
@@ -445,5 +444,5 @@ def write_author_year_centroids(au: pd.DataFrame, facets: list[str], version: st
             keys.append(f"{a}|{y}")
             cents.append(c / (np.linalg.norm(c) or 1))
         if keys:
-            embed.append_vectors_to(VEC_DIR / f"author_year_{facet}_{run_id}.parquet", keys,
+            embed.append_vectors_to(run_vectors(run_id) / f"author_year_{facet}_{run_id}.parquet", keys,
                                     np.asarray(cents, dtype=np.float32), version)

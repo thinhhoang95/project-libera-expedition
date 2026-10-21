@@ -19,7 +19,7 @@ import pandas as pd
 
 from . import ingest, store
 from .clients import BudgetExceeded, OpenAlex, SemanticScholar, short_id
-from .config import DATA, ExpansionParams
+from .config import ExpansionParams, project_dir
 
 log = logging.getLogger(__name__)
 DOI_RE = re.compile(r"10\.\d{4,9}/[^\s\"'<>\]\)]+", re.I)
@@ -101,8 +101,7 @@ async def resolve_ai_report(oa: OpenAlex, con, run_id: str, report_path: str) ->
 
     Title+year matching would need OpenAlex search calls; unresolved entries are dropped and
     counted, as the recipe requires. The report file is stored with the run."""
-    run_dir = DATA / "runs" / run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = project_dir(run_id, "inputs")
     shutil.copy(report_path, run_dir / ("ai_report" + "".join(Path(report_path).suffixes)))
     text = open(report_path, encoding="utf-8", errors="ignore").read()
     dois = sorted({d.rstrip(".,;").lower() for d in DOI_RE.findall(text)})

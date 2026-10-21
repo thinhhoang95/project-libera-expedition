@@ -4,7 +4,7 @@ their year for corpus citations received in T+1..T+3? Only information available
 Robustness: the forward and semantic routes selected papers by their 2026 citation count, which
 leaks the future into who is in the corpus. Results are also reported on author-route papers only
 (taken newest-first, with no citation filter). Usage: --run-id (default dro-pilot); tables are saved to
-data/backtest/<run>/experiments/ (explorer: Experiments view)."""
+data/projects/<run>/backtest/experiments/ (explorer: Experiments view)."""
 import json
 
 import numpy as np

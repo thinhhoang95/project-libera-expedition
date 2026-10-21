@@ -38,7 +38,7 @@ Author IDs come from `authorships`; the pipeline never calls `/authors?search=`.
 
 ## Caching and idempotency
 
-Raw JSON is stored gzipped under `data/raw/{source}/{kind}/{key}.json.gz`, a local stand-in for
+Raw JSON is stored gzipped under `data/shared/raw/{source}/{kind}/{key}.json.gz`, a local stand-in for
 object storage:
 
 - `openalex/work/W….json.gz`: one file per work, written by every call that returns works.

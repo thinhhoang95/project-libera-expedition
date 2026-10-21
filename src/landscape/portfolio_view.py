@@ -17,7 +17,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from . import embed, external, portfolio, store
+from . import embed, external, portfolio
 
 WARMTH_SPEC = json.loads((portfolio.MODELS / "community_warmth.json").read_text())
 REASONS = {"lcoup": "cites the same literature", "sim_recent": "its recent work is close to yours",
@@ -229,7 +229,8 @@ def render_start_here(run: str, q, paper_card, record) -> None:
             st.caption("Methods not yet used for a problem, though they are used for similar problems (experiment 4: "
                        "AUC 0.70-0.80). Shown as diamonds in the **Map & grid** grid.")
     with tabs[3]:
-        op = store.DATA / "research_lab" / run / "opportunities.parquet"
+        from .research_lab import lab_dir
+        op = lab_dir(run) / "opportunities.parquet"
         if op.exists():
             o = pd.read_parquet(op).sort_values("score", ascending=False).head(6)
             st.dataframe(pd.DataFrame({"from": o.source_label, "to": o.target_label, "citations seen": o.observed,

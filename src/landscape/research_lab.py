@@ -19,7 +19,7 @@ from sklearn.preprocessing import StandardScaler
 
 from . import embed
 from .backtest import Assigner
-from .config import DATA
+from .config import project_dir
 from .identity import work_aliases
 
 
@@ -28,12 +28,7 @@ def unit(v):
 
 
 def lab_dir(run_id: str) -> Path:
-    # A run identifier must never become an arbitrary filesystem path.
-    from urllib.parse import quote
-    segment = quote(run_id, safe="")
-    if segment in ("", ".", ".."):
-        segment = "run-" + segment
-    return DATA / "research_lab" / segment
+    return project_dir(run_id, "research_lab", mkdir=False)
 
 
 class Lab:

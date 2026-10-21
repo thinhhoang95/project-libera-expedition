@@ -4,7 +4,7 @@ For each paper x published in T-1..T: its k nearest neighbours among papers <= T
 256-d). Burstiness = share of those neighbours published in T-1..T. Outcome: the local ball
 (radius = similarity to the k-th neighbour) - share of T+1..T+3 papers inside it versus the share of
 T-2..T papers inside it. Compared with the paper's cluster-level E', its citations, and random.
-Usage: --run-id (default dro-pilot); tables are saved to data/backtest/<run>/experiments/.
+Usage: --run-id (default dro-pilot); tables are saved to data/projects/<run>/backtest/experiments/.
 """
 import json
 

@@ -23,7 +23,7 @@ import pandas as pd
 from scipy import sparse
 
 from . import embed, store
-from .config import VEC_DIR, RunParams, SignalParams
+from .config import RunParams, SignalParams, run_vectors
 from .identity import work_aliases
 from .llm import LLMBudgetExceeded, OpenRouter
 
@@ -77,7 +77,7 @@ class Ctx:
         per_year = self.papers.groupby("year").size()
         ok = [y for y in per_year.index if all(per_year.get(y - k, 0) >= self.sp.min_papers_per_year for k in range(3))]
         self.cutoffs = [int(y) for y in sorted(ok)]
-        cents = pd.read_parquet(VEC_DIR / f"cluster_centroids_{run_id}.parquet")
+        cents = pd.read_parquet(run_vectors(run_id) / f"cluster_centroids_{run_id}.parquet")
         self.centroid = {c: np.asarray(v, dtype=np.float32) for c, v in zip(cents.cluster_id, cents.centroid)}
 
     def assignment(self, facet: str, alpha: float) -> pd.DataFrame:

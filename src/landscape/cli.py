@@ -7,6 +7,11 @@
     landscape embed --run-id dro-pilot           # Phase 4 (+ tag normalization)
     landscape core --run-id dro-pilot            # Phase 5
     landscape status --run-id dro-pilot
+
+    landscape serve                              # the Libera Expedition web app and its job worker
+    landscape queue --run-id dro-pilot --template full   # queue a whole pipeline (resumable)
+    landscape jobs                               # the queue; landscape worker runs it without the web app
+    landscape migrate-layout                     # move a flat data/ folder into shared/ + projects/
 """
 
 from __future__ import annotations
@@ -67,6 +72,10 @@ def cmd_new_run(a, con):
         a.run_id, [], json.dumps(p.to_dict()), a.cutoff_year, json.dumps({}), json.dumps({}),
         datetime.now(), json.dumps({"seed_dois": a.seed_doi or [], "seed_ids": a.seed_id or [],
                                     "ai_report": a.ai_report})])
+    from .projects import write_meta
+
+    write_meta(a.run_id, name=a.name, description=a.description, seed_dois=a.seed_doi or [],
+               seed_ids=a.seed_id or [])
     print(f"created run {a.run_id}")
 
 
@@ -214,9 +223,14 @@ def cmd_external(a, con):
 
 
 def cmd_portfolio(a, con):
+    from .orientation import build_orientation
     from .portfolio import build_portfolio
 
-    print(json.dumps(build_portfolio(con, a.run_id, _params(con, a.run_id)), indent=2, default=str))
+    stats = build_portfolio(con, a.run_id, _params(con, a.run_id))
+    # orientation opens the database read-only; DuckDB refuses that while this process holds it read-write
+    con.close()
+    stats["orientation"] = build_orientation(a.run_id, db_path=str(store.DB_PATH))
+    print(json.dumps(stats, indent=2, default=str))
 
 
 def cmd_my_paper(a, con):
@@ -224,7 +238,8 @@ def cmd_my_paper(a, con):
 
     path = analyse_doi(con, a.run_id, _params(con, a.run_id), a.doi)
     rec = json.loads(path.read_text())
-    _add_spend(con, a.run_id, "llm_my_paper", rec.get("llm_cost_usd", 0.0))
+    if not a.read_only:  # on the web app's replica the cost stays in the paper's record only
+        _add_spend(con, a.run_id, "llm_my_paper", rec.get("llm_cost_usd", 0.0))
     warm = sorted((w for w in rec["warmth"] if w.get("rank") == w.get("rank") and w.get("rank")), key=lambda w: w["rank"])
     print(f"{rec['title']} ({rec['year']}) -> {path}")
     labels = dict(con.execute("SELECT cluster_id, label FROM clusters WHERE run_id = ?", [a.run_id]).fetchall())
@@ -264,7 +279,33 @@ def main(argv=None):
     s.add_argument("--paper-budget", type=int)
     s.add_argument("--cutoff-year", type=int)
     s.add_argument("--params", help="JSON file overriding RunParams fields")
+    s.add_argument("--name", help="display name of the project")
+    s.add_argument("--description")
     s.set_defaults(fn=cmd_new_run)
+
+    s = sub.add_parser("serve", help="the Libera Expedition web app (with the job worker)")
+    s.add_argument("--host", default="127.0.0.1")
+    s.add_argument("--port", type=int, default=8600)
+    s.add_argument("--no-worker", action="store_true", help="do not run queued jobs in this process")
+    s.add_argument("--reload", action="store_true", help="restart on code changes (development)")
+    s.set_defaults(fn=None)
+
+    s = sub.add_parser("worker", help="run queued jobs without the web app")
+    s.set_defaults(fn=None)
+
+    s = sub.add_parser("queue", help="queue pipeline steps for a project")
+    s.add_argument("--run-id", required=True)
+    s.add_argument("--template", choices=["full", "map", "refresh"], default="map")
+    s.add_argument("--steps", help="comma-separated step names instead of a template")
+    s.set_defaults(fn=None)
+
+    s = sub.add_parser("jobs", help="show the job queue")
+    s.add_argument("--run-id")
+    s.set_defaults(fn=None)
+
+    s = sub.add_parser("migrate-layout", help="move data/ from the flat layout into shared/ + projects/")
+    s.add_argument("--dry-run", action="store_true")
+    s.set_defaults(fn=None)
 
     for name, fn in [("expand", cmd_expand), ("preprints", cmd_preprints), ("semantic", cmd_semantic), ("extract", cmd_extract),
                      ("qa", cmd_qa), ("embed", cmd_embed), ("core", cmd_core), ("viz", cmd_viz), ("signals", cmd_signals), ("backtest", cmd_backtest), ("research-lab", cmd_research_lab), ("external", cmd_external),
@@ -296,6 +337,7 @@ def main(argv=None):
             s.add_argument("--llm-cap", type=float, default=2.0, help="USD cap for external facet extraction")
         if name == "my-paper":
             s.add_argument("--doi", required=True)
+            s.add_argument("--read-only", action="store_true", help="open the database read-only (spend is not logged)")
         if name == "score-snapshot":
             s.add_argument("--date", required=True, help="snapshot date YYYY-MM-DD (docs/snapshots/<run>-<date>.json)")
             s.add_argument("--months", type=int, default=12, help="horizon after the snapshot date")
@@ -306,6 +348,9 @@ def main(argv=None):
     s.set_defaults(fn=None)
 
     a = ap.parse_args(argv)
+    if a.cmd in ("serve", "worker", "queue", "jobs", "migrate-layout"):
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+        return _app_command(a)
     if a.cmd == "explorer":
         import subprocess
         from pathlib import Path
@@ -316,11 +361,72 @@ def main(argv=None):
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    con = store.connect(read_only=a.cmd == "research-lab")
+    _check_layout()
+    con = store.connect(read_only=a.cmd == "research-lab" or getattr(a, "read_only", False))
     try:
         a.fn(a, con)
     finally:
         con.close()
+
+
+def _check_layout() -> None:
+    from .projects import needs_migration
+
+    if needs_migration():
+        sys.exit("data/ uses the old flat layout: run `landscape migrate-layout` once (close the explorer first).")
+
+
+def _app_command(a) -> None:
+    from . import jobs
+
+    if a.cmd == "migrate-layout":
+        from .projects import migrate_layout
+
+        for s, t in migrate_layout(dry_run=a.dry_run):
+            print(f"{s}  ->  {t}")
+        print("dry run: nothing moved" if a.dry_run else "done; the moves are listed in data/migration.json")
+    elif a.cmd == "serve":
+        _check_layout()
+        import uvicorn
+
+        from .web.server import create_app
+
+        if a.reload:
+            import os
+
+            os.environ["LIBERA_NO_WORKER"] = "1" if a.no_worker else ""
+            uvicorn.run("landscape.web.server:create_app", factory=True, host=a.host, port=a.port, reload=True)
+        else:
+            uvicorn.run(create_app(worker=not a.no_worker), host=a.host, port=a.port)
+    elif a.cmd == "worker":
+        _check_layout()
+        import time
+
+        from .web.server import make_worker
+
+        w = make_worker()
+        lanes = w.start()
+        if not lanes:
+            sys.exit("every lane is already run by another worker (the web app?)")
+        print(f"running lanes: {', '.join(lanes)} (Ctrl-C interrupts; interrupted steps resume on the next start)")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            w.shutdown()
+    elif a.cmd == "queue":
+        con = jobs.connect()
+        names = a.steps.split(",") if a.steps else jobs.TEMPLATES[a.template]
+        unknown = [n for n in names if n not in jobs.STEPS]
+        if unknown:
+            sys.exit(f"unknown steps {unknown}; known: {', '.join(jobs.STEPS)}")
+        jid = jobs.enqueue(con, a.run_id, names, title=f"{a.template if not a.steps else 'Steps'}: {a.run_id}")
+        print(f"queued job {jid}: {' -> '.join(names)}")
+    elif a.cmd == "jobs":
+        con = jobs.connect()
+        for j in jobs.list_jobs(con, a.run_id):
+            print(f"#{j['id']:<4} {j['status']:<10} {j['progress']:>4.0%}  {j['project']:<20} {j['title']}"
+                  + (f"  · {j['current']}" if j["status"] not in ("done",) and j["current"] else ""))
 
 
 if __name__ == "__main__":

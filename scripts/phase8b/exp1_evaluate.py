@@ -1,5 +1,5 @@
 """Evaluate rankings for experiment 1 (paper-level bridges), leave-one-cutoff-out for learned models.
-Saves its tables to data/backtest/<run>/experiments/ (explorer: Experiments view)."""
+Saves its tables to data/projects/<run>/backtest/experiments/ (explorer: Experiments view)."""
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression

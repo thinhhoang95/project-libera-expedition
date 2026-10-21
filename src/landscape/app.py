@@ -20,6 +20,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from landscape import store
+from landscape.config import project_dir
 
 ACCENT = "#e8590c"  # reserved for what a reviewer should look at: selection, playhead, new cells
 MUTED = "#c9cdd2"
@@ -732,11 +733,11 @@ def paper_bridges_panel(sel):
 
 @st.cache_data(show_spinner=False)
 def _external(run: str, name: str, mtime: float) -> pd.DataFrame:
-    return pd.read_parquet(store.DATA / "external" / run / name)
+    return pd.read_parquet(project_dir(run, "external") / name)
 
 
 def external_imports_panel(sel):
-    path = store.DATA / "portfolio" / RUN / "live_imports.parquet"
+    path = project_dir(RUN, "portfolio") / "live_imports.parquet"
     if not path.exists():
         st.info(f"No external-import list for this run. Run `landscape external --run-id {RUN}` and "
                 f"`landscape portfolio --run-id {RUN}`.")
@@ -784,7 +785,7 @@ def external_imports_panel(sel):
     if not (ev and ev.selection.rows):
         return
     r = d.iloc[ev.selection.rows[0]]
-    fpath = store.DATA / "external" / RUN / "facets.parquet"
+    fpath = project_dir(RUN, "external") / "facets.parquet"
     if fpath.exists():
         f = _external(RUN, "facets.parquet", fpath.stat().st_mtime)
         f = f[f.paper_id == r.paper_id].set_index("facet").text
@@ -794,7 +795,7 @@ def external_imports_panel(sel):
     st.caption(f"{r.venue or ''} · {int(r.year) if pd.notna(r.year) else ''} · {int(r.cited_by_count or 0)} citations "
                f"overall · {int(r.corpus_citers_total)} citing papers in the corpus · "
                f"[OpenAlex](https://openalex.org/{r.paper_id})")
-    epath = store.DATA / "external" / RUN / "edges.parquet"
+    epath = project_dir(RUN, "external") / "edges.parquet"
     e = _external(RUN, "edges.parquet", epath.stat().st_mtime)
     riders = e[(e.cited_id == r.paper_id) & (e.citing_year >= int(r.as_of) - 2)].citing_id.unique().tolist()
     if riders:

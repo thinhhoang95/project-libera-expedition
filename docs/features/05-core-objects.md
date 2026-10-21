@@ -51,7 +51,7 @@ Outputs:
 - `clusters(run_id, cluster_id, facet, resolution, alpha, label, description, top_terms,
   stability, is_stable, size, parent_cluster_id, color, time_bucket_years, label_model)`
 - `paper_cluster(run_id, paper_id, facet, resolution, alpha, cluster_id, sim_to_centroid)`
-- `data/vectors/cluster_centroids_{run_id}.parquet` (768-d)
+- `data/projects/<run>/vectors/cluster_centroids_{run_id}.parquet` (768-d)
 
 ## 5.2 Problem × method matrix
 
@@ -89,7 +89,7 @@ institution_ids, centroid_ref)` gives each author and year:
 
 Profiles are built at α = 0 for every facet and also at α = 0.3 for problem and method.
 `centroid_ref` points to the author-year centroid row in
-`data/vectors/author_year_{facet}_{run_id}.parquet`.
+`data/projects/<run>/vectors/author_year_{facet}_{run_id}.parquet`.
 
 ## Tuning notes
 

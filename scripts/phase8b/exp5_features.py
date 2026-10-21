@@ -16,7 +16,7 @@ from data available at T only, in five families:
 
 Outcomes: y_corpus = top quartile of corpus citations received in T+1..T+3 (as in exp2); y_global =
 top quartile of OpenAlex cited_by_count (2026) within the publication year. Duplicate records
-(same normalized title) are collapsed first. Writes data/backtest/<run>/exp5_papers.parquet. Usage:
+(same normalized title) are collapsed first. Writes data/projects/<run>/backtest/exp5_papers.parquet. Usage:
 --run-id (default dro-pilot); needs fetch_counts_by_year.py first.
 """
 import re

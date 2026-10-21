@@ -27,7 +27,7 @@ import pyarrow.parquet as pq
 
 from . import embed, store
 from .clients import OA_SELECT, Budget, OpenAlex, short_id
-from .config import RunParams
+from .config import RunParams, project_dir
 from .extract import FIELDS, PROMPT_V1, SCHEMA, TAGS, validate
 from .ingest import rebuild_abstract
 from .llm import LLMBudgetExceeded, OpenRouter
@@ -37,9 +37,7 @@ FACETS = ("problem", "method", "innovation", "result", "limitations")
 
 
 def ext_dir(run_id: str) -> Path:
-    d = store.DATA / "external" / run_id
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    return project_dir(run_id, "external")
 
 
 def _name(v):

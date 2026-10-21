@@ -23,8 +23,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import embed, store
-from .config import RunParams
+from . import embed
+from .config import RunParams, project_dir
 
 
 def _assign(ids: list[str], cent: pd.DataFrame, facet: str, version: str, allowed: set[str]) -> pd.Series:
@@ -38,7 +38,7 @@ def _assign(ids: list[str], cent: pd.DataFrame, facet: str, version: str, allowe
 
 
 def score_snapshot(con, run_id: str, p: RunParams, snap_date: str, months: int = 12) -> dict:
-    d = store.DATA / "snapshots" / run_id / snap_date
+    d = project_dir(run_id, "snapshots", snap_date, mkdir=False)
     man_path = Path("docs/snapshots") / f"{run_id}-{snap_date}.json"
     if not man_path.exists():
         raise SystemExit(f"no manifest {man_path}")

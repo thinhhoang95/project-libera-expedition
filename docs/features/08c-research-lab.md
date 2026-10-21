@@ -173,7 +173,7 @@ received citations. Neither this test nor the earlier paper-bridge experiments t
 birth of a community: they predict uptake by already established cutoff communities.
 
 Reproduce with `uv run python scripts/phase8c/semantic_ablation.py --run-id dro-pilot`.
-Results are saved to `data/research_lab/dro-pilot/semantic_ablation.csv`.
+Results are saved to `data/projects/dro-pilot/research_lab/semantic_ablation.csv`.
 
 ## 4. Opportunities should be a disagreement to investigate
 
@@ -256,7 +256,7 @@ uv run landscape explorer
 The original 2020–2023 cutoff objects come from `landscape backtest`. On a new corpus, the
 offline preparation script can build all requested cutoff core objects. Preparation and the
 narrow signal refresh write derived DB tables; `research-lab` opens DuckDB read-only and
-writes only `data/research_lab/<run>/`. Close the explorer before DB-writing steps.
+writes only `data/projects/<run>/research_lab/`. Close the explorer before DB-writing steps.
 
 Artifacts include `summary.json`, route counts and weights, decomposed trends and time series,
 geometry diagnostics, all historical candidates, per-cutoff metrics and comparisons, live

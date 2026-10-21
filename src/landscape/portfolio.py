@@ -27,9 +27,9 @@ from scipy import sparse
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
-from . import embed, external, store
+from . import embed, external
 from .backtest import Assigner
-from .config import RunParams
+from .config import RunParams, project_dir
 
 log = logging.getLogger(__name__)
 MODELS = Path(__file__).parent / "models"
@@ -38,9 +38,7 @@ DIM = 256
 
 
 def out_dir(run_id: str) -> Path:
-    d = store.DATA / "portfolio" / run_id
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    return project_dir(run_id, "portfolio")
 
 
 def _model_score(name: str, X: pd.DataFrame) -> np.ndarray:

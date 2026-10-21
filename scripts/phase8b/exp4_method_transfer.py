@@ -3,7 +3,7 @@
 Empty cells at T; hit = the cell gets >= 1 (and, stricter, >= 2) papers in T+1..T+3. Scores:
 recipe-style neighbour indicator, item-based collaborative filtering, low-rank SVD completion,
 and a popularity baseline. Unsupervised, so no fitting on the test cutoff.
-Usage: --run-id (default dro-pilot); tables are saved to data/backtest/<run>/experiments/.
+Usage: --run-id (default dro-pilot); tables are saved to data/projects/<run>/backtest/experiments/.
 """
 import numpy as np
 import pandas as pd

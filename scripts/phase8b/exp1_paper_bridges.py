@@ -1,7 +1,7 @@
 """Experiment 1: paper-level bridges. Which not-yet-cited innovation papers will problem cluster X adopt?
 
 Candidates at cutoff T: (X, i) with i an innovation paper <= T outside X that no X paper has cited
-by T. Hit: an X paper published in T+1..T+3 cites i. Writes data/backtest/<run>/exp1_pairs.parquet. Usage: --run-id (default dro-pilot).
+by T. Hit: an X paper published in T+1..T+3 cites i. Writes data/projects/<run>/backtest/exp1_pairs.parquet. Usage: --run-id (default dro-pilot).
 """
 import numpy as np
 import pandas as pd

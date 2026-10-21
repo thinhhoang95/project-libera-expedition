@@ -10,9 +10,42 @@ from dotenv import dotenv_values
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA = Path(os.environ.get("LANDSCAPE_DATA", ROOT / "data"))
-RAW_DIR = DATA / "raw"  # local stand-in for object storage
-VEC_DIR = DATA / "vectors"
-DB_PATH = DATA / "landscape.duckdb"
+# Layout (see docs/features/11-web-app.md):
+#   shared/      what every project reuses: the DuckDB file (papers, facets and run-keyed tables), the raw
+#                response cache and the paper-level vector store, so a paper is fetched, extracted and
+#                embedded once whichever project reaches it
+#   projects/<project>/   everything one project builds (cutoff runs <project>@T<year> included)
+#   app/         the web app's job queue, review notes and read replica of the database
+SHARED = DATA / "shared"
+RAW_DIR = SHARED / "raw"  # local stand-in for object storage
+VEC_DIR = SHARED / "vectors"
+# LANDSCAPE_DB points a process at another database file, e.g. the web app's read replica
+DB_PATH = Path(os.environ.get("LANDSCAPE_DB", SHARED / "landscape.duckdb"))
+PROJECTS = DATA / "projects"
+APP_DIR = DATA / "app"
+
+
+def project_id(run_id: str) -> str:
+    """The project a run belongs to: cutoff runs <project>@T<year> live with their project."""
+    return run_id.split("@", 1)[0]
+
+
+def project_dir(run_id: str, *parts: str, mkdir: bool = True) -> Path:
+    """projects/<project>/<parts...>. A run identifier must never become an arbitrary filesystem path."""
+    from urllib.parse import quote
+
+    segment = quote(project_id(run_id), safe="")
+    if segment in ("", ".", ".."):
+        segment = "run-" + segment
+    d = PROJECTS.joinpath(segment, *parts)
+    if mkdir:
+        d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def run_vectors(run_id: str) -> Path:
+    """Run-level vectors (cluster centroids, author-year centroids), cutoff runs included."""
+    return project_dir(run_id, "vectors")
 
 # Project env files win over the shell environment: a machine-wide OPENAI_API_KEY must not
 # shadow the OpenRouter key kept in .env.local.

@@ -1,4 +1,8 @@
-# Research Landscape Engine
+# Libera Expedition
+
+<img src="web/public/logo.png" width="72" alt="">
+
+Libera Expedition is a web app on top of the Research Landscape Engine.
 
 The engine takes a seed paper and builds an evidence-backed map of its field. The full design
 is in [docs/build_recipe.md](docs/build_recipe.md). This repository implements **Phases 1–5**:
@@ -18,11 +22,20 @@ The [Phase 8c research lab](docs/features/08c-research-lab.md) audits sampling-s
 directions, compares broader bridge lists and semantic ablations, and exposes underconnected
 communities and topic-specific people roles. Open **Research lab** in the explorer for the results.
 
-## Setup
+## Web app
 
 ```bash
 uv sync
+cd web && npm install && npm run build && cd ..
+uv run landscape serve                         # http://127.0.0.1:8600
 ```
+
+The app is organized by projects (one field each). It shows every view of the explorer, and its job
+queue runs the whole pipeline with progress you can pause and resume. Pages stay usable while a step
+runs, because the app reads a copy of the database published after each step. See
+[11-web-app.md](docs/features/11-web-app.md).
+
+## Setup
 
 Keys are read from `.env.local`. Values there take precedence over the shell environment.
 
@@ -32,8 +45,15 @@ Keys are read from `.env.local`. Values there take precedence over the shell env
 | `OPENAI_API_KEY` | OpenRouter key (`sk-or-…`) for extraction and labels (required) |
 | `S2_API_KEY` | Semantic Scholar (optional; without it S2 is slow and best-effort) |
 
-Data lives in `data/`: the DuckDB file `landscape.duckdb`, the raw response cache `raw/`, and
-the vector store `vectors/`. Set `LANDSCAPE_DATA` to move it.
+Data lives in `data/`. Set `LANDSCAPE_DATA` to move it.
+- `shared/` holds what every project reuses: the DuckDB file `landscape.duckdb`, the raw response cache
+  `raw/` and the paper vector store `vectors/`.
+- `projects/<id>/` holds everything one project builds: portfolio, external works, backtest, research
+  lab, snapshots, run-level vectors and step logs.
+- `app/` holds the web app's queue and its read copies of the database.
+
+A data folder from before projects existed is moved into this layout with `landscape migrate-layout`
+(`--dry-run` lists the moves first).
 
 ## Pipeline
 
@@ -55,10 +75,18 @@ uv run landscape score-snapshot --run-id dro-pilot --date 2026-10-21 --months 12
 uv run python scripts/phase8c/prepare_cutoffs.py --run-id dro-pilot --cutoffs 2019
 uv run landscape research-lab --run-id dro-pilot  # offline diagnostics and experiments, including a complete chronological test
 uv run landscape status   --run-id dro-pilot
-uv run landscape explorer                      # http://localhost:8501 (close it before pipeline steps)
+uv run landscape explorer                      # legacy Streamlit explorer (close it before pipeline steps)
 ```
 
-Every step is incremental and cached, so re-running a step only does the missing work.
+Every step is incremental and cached, so re-running a step only does the missing work. To run the
+whole pipeline as one resumable job instead, without the web app:
+
+```bash
+uv run landscape new-run --run-id my-field --seed-doi <DOI> --name "My field"
+uv run landscape queue --run-id my-field --template map    # or full (adds backtest and research lab)
+uv run landscape worker                                    # Ctrl-C interrupts; the next start resumes
+uv run landscape jobs
+```
 
 ## Layout
 
@@ -73,3 +101,5 @@ Every step is incremental and cached, so re-running a step only does the missing
 | `viz.py`, `app.py` | 6b: layout precompute and the Streamlit explorer |
 | `backtest.py`, `scripts/phase8/` | 8: cutoff runs, outcomes, precision@k, analysis scripts |
 | `cli.py` | one sub-command per phase |
+| `projects.py`, `jobs.py`, `replica.py` | project layout and migration, the job queue and worker, the database read copy |
+| `web/` (Python), `web/` (repo root, React) | the Libera Expedition API and frontend |

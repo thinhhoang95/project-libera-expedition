@@ -4,7 +4,7 @@ Every retrospective test so far can leak hindsight: the corpus was sampled in 20
 models were trained on later papers, and leave-one-cutoff-out trains on the test period's future.
 A frozen snapshot scored against papers that appear *after* it has none of these problems.
 
-Writes data/snapshots/<run>/<date>/*.parquet plus manifest.json (SHA-256 of every file, the
+Writes data/projects/<run>/snapshots/<date>/*.parquet plus manifest.json (SHA-256 of every file, the
 corpus as of today, and the scoring protocol, fixed before any outcome exists). A copy of the
 manifest goes to docs/snapshots/ so it is versioned in git: any later change to a frozen list
 shows up as a hash mismatch.
@@ -23,16 +23,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from landscape import embed, experiments, store
+from landscape import embed, experiments
 from landscape.cli import _params
+from landscape.config import project_dir, run_vectors
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--run-id", default="dro-pilot")
 ap.add_argument("--date", default=date.today().isoformat())
 a = ap.parse_args()
 RUN = a.run_id
-OUT = store.DATA / "snapshots" / RUN / a.date
-OUT.mkdir(parents=True, exist_ok=True)
+OUT = project_dir(RUN, "snapshots", a.date)
 con = experiments.connect_ro()
 P = _params(con, RUN)
 rng = np.random.default_rng(20261021)
@@ -137,7 +137,7 @@ save("bridge_lim_inn_baseline_random", rand, "Random community-pair baseline (se
      "bridge_lim_inn")
 
 # ---- 5. external imports (exp6 live list), vs the current in-field rate
-lp = store.DATA / "portfolio" / RUN / "live_imports.parquet"  # built by `landscape portfolio`
+lp = project_dir(RUN, "portfolio") / "live_imports.parquet"  # built by `landscape portfolio`
 if lp.exists():
     L = pd.read_parquet(lp)
     save("external_imports", L.head(100)[["paper_id", "title", "subfield", "score", "outside_field", "recent_citers",
@@ -152,7 +152,7 @@ if lp.exists():
          "as external_imports", "external_imports")
 
 # ---- 5b. community warmth (My paper): top-3 warm communities for every recent paper, vs the 3 largest
-wp = store.DATA / "portfolio" / RUN / "warmth.parquet"
+wp = project_dir(RUN, "portfolio") / "warmth.parquet"
 if wp.exists():
     W = pd.read_parquet(wp)
     W = W[W.paper_id.isin(set(papers[papers.year >= y1 - 1].paper_id)) & W["rank"].notna()]
@@ -181,7 +181,7 @@ save("emerging_cluster", em[["cluster_id", "label", "rank", "score", "group_kind
 # ---- 7. the frame: today's corpus and the frozen centroids used to assign future papers
 save("corpus_ids", papers[["paper_id", "year"]], "Every paper in the corpus at the snapshot: later papers are new",
      "—", None)
-cent = Path(store.DATA) / "vectors" / f"cluster_centroids_{RUN}.parquet"
+cent = run_vectors(RUN) / f"cluster_centroids_{RUN}.parquet"
 if cent.exists():
     shutil.copy(cent, OUT / "cluster_centroids.parquet")
 

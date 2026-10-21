@@ -1,7 +1,7 @@
 """Phase 4: local EmbeddingGemma 2 vectors per facet, a Parquet vector store and FAISS indexes.
 
-Layout: data/vectors/{facet}.parquet (paper_id, vector[768], embedding_model_version) and
-data/vectors/{facet}.faiss (HNSW, inner product on unit vectors). One version per file:
+Layout: data/shared/vectors/{facet}.parquet (paper_id, vector[768], embedding_model_version) and
+data/shared/vectors/{facet}.faiss (HNSW, inner product on unit vectors). One version per file:
 if the model version changes, the file is rebuilt from scratch.
 """
 

@@ -2,8 +2,8 @@
 
 Yearly counts make "as of T" measurements possible without leaking the future: a work's global
 citations received in each year, and an author's global citations received and works published in
-each year. OpenAlex keeps the last ten years. Responses are cached under data/raw/openalex/
-{work_counts,author_counts}/ and written to data/backtest/<run>/oa_{work,author}_counts.parquet. The calls
+each year. OpenAlex keeps the last ten years. Responses are cached under data/shared/raw/openalex/
+{work_counts,author_counts}/ and written to data/projects/<run>/backtest/oa_{work,author}_counts.parquet. The calls
 are logged in api_calls under the base run.
 """
 import asyncio

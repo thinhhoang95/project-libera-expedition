@@ -49,7 +49,7 @@ command prints the chosen threshold and the candidates' similarity quantiles.
 
 Pass `--ai-report <file>` to `new-run`. DOIs are extracted from the file with a regex and
 resolved on OpenAlex. Anything that does not resolve is dropped. The report file is copied to
-`data/runs/<run_id>/`. Resolved papers enter as route `ai_report` and are then treated like
+`data/projects/<run_id>/inputs/`. Resolved papers enter as route `ai_report` and are then treated like
 seeds. The report text itself is never passed to any LLM step.
 
 Limitation: matching by exact title plus year is not implemented, because it needs OpenAlex

@@ -13,39 +13,9 @@ import pandas as pd
 import streamlit as st
 
 from . import experiments
+from .experiments import ORDER, PILOT_DECISIONS, SCRIPTS
 
 PORTFOLIO_DOC = Path(__file__).resolve().parents[2] / "docs" / "features" / "findings-portfolio.md"
-
-# what was decided on the pilot; another run should be judged on its own tables
-PILOT_DECISIONS = {
-    "exp1_paper_bridges": "adopted: signals bridge_paper / bridge_paper_gem (Bridges tab, Papers to bring in)",
-    "exp2_early_work": "adopted: signal early_work (People tab)",
-    "exp3_micro_topics": "burstiness dropped; local momentum adopted lightly (map layer Rising pockets)",
-    "exp4_method_transfer": "adopted: item CF for bridge_method_transfer (grid diamonds)",
-    "exp5_beyond_rich_get_richer": "findings only; not used by any signal yet",
-    "exp6_imports": "adopted as a review list (Bridges tab, From outside the field)",
-    "exp7_coupling": "findings: coupling needs no received citations but defines the reachable set",
-    "exp8_birth": "not demonstrated; live list frozen in the prospective snapshot (low confidence)",
-    "exp9_realized": "findings: 95% of realized uptake is uncited; no special foresight from semantics",
-    "exp10_warmth": "adopted: community warmth (My paper view; models/community_warmth.json)",
-    "exp11_leaders": "not supported: no follow-up wave after big authors or labs step in",
-}
-ORDER = list(PILOT_DECISIONS)
-SCRIPTS = {
-    "exp1_paper_bridges": ["exp1_paper_bridges.py", "exp1_evaluate.py"],
-    "exp2_early_work": ["exp2_early_work.py"],
-    "exp3_micro_topics": ["exp3_micro_topics.py"],
-    "exp4_method_transfer": ["exp4_method_transfer.py"],
-    "exp5_beyond_rich_get_richer": ["fetch_counts_by_year.py", "exp6_imports.py", "exp5_features.py",
-                                    "exp5_evaluate.py [logit] [hgb]"],
-    "exp6_imports": ["exp6_imports.py (after `landscape external`)"],
-    "exp7_coupling": ["exp7_coupling.py"],
-    "exp8_birth": ["exp8_birth.py"],
-    "exp9_realized": ["exp9_realized.py", "exp9_within_candidate.py"],
-    "exp10_warmth": ["exp10_warmth.py"],
-    "exp11_leaders": ["exp11_leaders.py"],
-}
-
 
 @st.cache_data(show_spinner=False)
 def _table(run: str, name: str, saved_at: str) -> pd.DataFrame:
@@ -126,7 +96,7 @@ def render_experiments(run: str) -> None:
     render_portfolio()
     st.subheader(f"Result tables for {run}")
     idx = experiments.load_index(run)
-    backtest = experiments.BACKTEST / f"{run}_summary.csv"
+    backtest = experiments.work_dir(run) / "summary.csv"
     if not idx and not backtest.exists():
         st.info(f"No experiment results for {run} yet. Build the cutoff runs with `landscape backtest --run-id "
                 f"{run}`, then run the scripts in `scripts/phase8b/` with `--run-id {run}` (see the 08b doc).")

@@ -1,6 +1,6 @@
 """Fit the production models for the paper-level signals on all backtest cutoffs and save them.
 
-Inputs: data/backtest/<run>/exp1_pairs.parquet and exp2_papers.parquet (run exp1 / exp2 first; --run-id,
+Inputs: data/projects/<run>/backtest/exp1_pairs.parquet and exp2_papers.parquet (run exp1 / exp2 first; --run-id,
 default dro-pilot).
 Output: src/landscape/models/{paper_bridges,early_work}.json (committed; read by signals.py).
 The honest accuracy estimates are the leave-one-cutoff-out numbers from the experiment scripts.

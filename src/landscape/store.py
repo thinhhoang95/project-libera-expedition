@@ -1,6 +1,6 @@
 """DuckDB tables (see Data model in the build recipe) and the raw-response cache.
 
-Raw JSON lives on disk under data/raw/{source}/{kind}/{key}.json.gz, a local stand-in for
+Raw JSON lives on disk under data/shared/raw/{source}/{kind}/{key}.json.gz, a local stand-in for
 object storage. A cached entry is reused while it is younger than the run's freshness window.
 """
 
@@ -16,7 +16,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from .config import DATA, DB_PATH, RAW_DIR
+from .config import DB_PATH, RAW_DIR
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS review_actions (
 
 
 def connect(path: Path = DB_PATH, read_only: bool = False) -> duckdb.DuckDBPyConnection:
-    DATA.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(path), read_only=read_only)
     if not read_only:
         con.execute(SCHEMA)
