@@ -199,7 +199,7 @@ def cmd_status(a, con):
     print(q("""SELECT count(*) papers, avg(CASE WHEN abstract_raw IS NULL THEN 1 ELSE 0 END) missing_abstract,
                       sum(CASE WHEN abstract_source = 's2' THEN 1 ELSE 0 END) s2_filled
                FROM papers JOIN provenance USING (paper_id) WHERE run_id = ?"""))
-    print(q("""SELECT facet, resolution, alpha, count(*) clusters, sum(CASE WHEN is_stable THEN 1 ELSE 0 END) stable,
+    print(q("""SELECT facet, resolution, alpha, count(*) clusters, sum(CASE WHEN is_stable THEN 1 ELSE 0 END) "stable",
                       sum(CASE WHEN kind = 'hub' THEN 1 ELSE 0 END) hubs
                FROM clusters WHERE run_id = ? GROUP BY ALL ORDER BY ALL"""))
 
