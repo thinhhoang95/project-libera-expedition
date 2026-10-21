@@ -28,6 +28,7 @@ PILOT_DECISIONS = {
     "exp8_birth": "not demonstrated; live list frozen in the prospective snapshot (low confidence)",
     "exp9_realized": "findings: 95% of realized uptake is uncited; no special foresight from semantics",
     "exp10_warmth": "adopted: community warmth (My paper view; models/community_warmth.json)",
+    "exp11_leaders": "not supported: no follow-up wave after big authors or labs step in",
 }
 ORDER = list(PILOT_DECISIONS)
 SCRIPTS = {
@@ -42,6 +43,7 @@ SCRIPTS = {
     "exp8_birth": ["exp8_birth.py"],
     "exp9_realized": ["exp9_realized.py", "exp9_within_candidate.py"],
     "exp10_warmth": ["exp10_warmth.py"],
+    "exp11_leaders": ["exp11_leaders.py"],
 }
 
 

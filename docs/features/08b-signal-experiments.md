@@ -35,6 +35,7 @@ uv run python scripts/phase8b/exp7_coupling.py        # coupling vs semantics by
 uv run python scripts/phase8b/exp8_birth.py           # community birth (needs exp6 for borrowing features)
 uv run python scripts/phase8b/exp9_realized.py && uv run python scripts/phase8b/exp9_within_candidate.py
 uv run python scripts/phase8b/exp10_warmth.py         # community warmth; writes models/community_warmth.json
+uv run python scripts/phase8b/exp11_leaders.py        # big labs: follow-up waves and community entries
 uv run python scripts/phase8b/freeze_snapshot.py      # prospective snapshot (date defaults to today)
 ```
 
@@ -58,6 +59,7 @@ leave-one-cutoff-out numbers below, not the in-sample fit.
 | 8. Community birth | best AUC 0.58–0.61; p@50 at the base rate; births are offshoots within one community, not crossovers | **not demonstrated**; live list frozen as a low-confidence prediction |
 | 9. Realized opportunities (content) | 95% of realized uptake is uncited; for a given idea, semantics ≈ coupling ≈ persistence (about 0.64) | better outcome measure; no special foresight |
 | 10. Community warmth (which communities take up a paper) | within-paper AUC 0.81, hit@3 0.69 vs 0.25 random, MRR 0.57; on the content outcome problem similarity alone is best (hit@3 0.60 vs 0.40) | **adopted**: My paper view ([09-portfolio.md](09-portfolio.md)) |
+| 11. Big labs steering the field | no follow-up wave by others after big authors or labs step in (gain −0.004 to +0.001); a small citation gain that comes from insiders, not big-lab steps; entry of big names does not predict community growth | **not supported** on this corpus |
 
 ## 1. Paper-level bridges
 
@@ -490,6 +492,64 @@ computed within each paper (`exp10_warmth.py`).
   model is not better there.
 - **Production:** the model fitted on all cutoffs is saved to `models/community_warmth.json` and
   served by `landscape portfolio` / `my-paper` ([09-portfolio.md](09-portfolio.md)).
+
+## 11. Do big labs steer the field?
+
+**Question.** Conversations look steered by big labs. When a prominent team steps somewhere new, does
+a follow-up wave by *other* people come after?
+
+**Prominence, as of the step year T only** (OpenAlex citations received by each author up to T):
+- **big author:** the team's most-cited author;
+- **big lab:** the team's institution whose authors in the map have the most citations up to T;
+- **big** = the top 10% of that year's papers.
+
+**A step**, in two versions:
+- **novel for the field:** the paper's novelty is in the top quarter;
+- **new for the lead author:** distance from that author's own earlier papers in the map is in the
+  top quarter.
+
+**Outcomes** (3,440 papers from 2018–2022; outcomes through 2025):
+- **Follow-up wave:** the share of papers by other authors in the paper's neighbourhood (its
+  15-nearest-earlier-paper ball) in T+1…T+3, against T−2…T. Hit = top quarter and at least 3 such
+  papers.
+- **Citations from others:** citations from papers sharing no author with it.
+
+**Base model:** novelty, local density and momentum, early global citations, team size, references,
+route.
+
+| Outcome (gain over base) | Big author | Big lab | Big author × novel | Big lab × novel | Big author × new for them |
+| --- | --- | --- | --- | --- | --- |
+| Follow-up wave (all) | −0.001 | −0.001 | −0.004 | −0.001 | −0.000 |
+| Follow-up wave (forward route) | −0.002 | −0.001 | −0.002 | +0.001 | −0.003 |
+| Citations from others (all) | +0.003 | 0.000 | +0.007 [+0.001, +0.012] | +0.005 | +0.010 [+0.003, +0.018] |
+| Citations from others (forward route) | +0.001 | +0.001 | −0.001 | +0.002 | +0.013 [+0.004, +0.021] |
+
+**Community level** (cutoffs 2019–2022, 76 community-cutoff cases): the number or prominence of big
+names entering a community does not predict its growth once momentum, size and the number of
+entrants are held fixed (partial ρ about 0, 90% CI −0.21 to +0.25).
+
+What it says:
+1. **No measurable wave after big names step in.** A big author's novel paper is followed by more
+   papers nearby (median 18 vs 10), but its neighbourhood was already busier. The growth is no
+   different: big teams step into places that are already active.
+2. **Big authors mostly work in mature areas.** Outside their novel papers, their papers'
+   neighbourhoods grow *less* afterwards (wave hit rate 14–19% vs 26–33%). For novel papers there
+   is no difference (24% vs 25%).
+3. **They get cited, which is not steering.** Novel papers by big labs are cited by others about
+   twice as often in raw rates (17.5% vs 7.5%, 80 papers), but the controlled gain is small.
+   The significant +0.010 to +0.013 for "new for the lead author" comes from having a track record
+   in the map at all: the raw rates of big and other authors moving somewhere new are equal (25.7%
+   vs 25.3%). That is the insider and credibility effect of experiment 5.
+
+**Limits:**
+- one field;
+- prominence from OpenAlex author profiles (disambiguation errors), a proxy for "big lab";
+- the "new for the lead author" step needs history inside the map (35 big-author steps);
+- three-year horizon;
+- a corpus sampled through the seed's citations.
+
+Steering by big labs may well happen through channels this corpus cannot see: industry papers
+outside it, benchmarks, software, and longer horizons.
 
 ## Prospective snapshot (frozen 2026-10-21)
 

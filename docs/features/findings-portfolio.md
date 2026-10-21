@@ -42,6 +42,7 @@ explorer's **Experiments** view keeps every result table open and re-runnable (`
 | 20 | **Uptake without citation** (the content moves towards an idea) | exp9: 95% of realized uptake is uncited; for a given idea, semantics ≈ coupling ≈ persistence (about 0.64) | A better outcome measure; no special foresight | — |
 | 21 | **Prospective snapshot** (2026-10-21) | 19 frozen lists with baselines; SHA-256 manifest and protocol in docs/snapshots/ | Running: score at 6, 12 and 24 months | — |
 | 22 | **Communities warm to a paper** | exp10: a top-3 community cites the paper within 3 years for 69% of papers (25% at random); within-paper AUC 0.81 | Use | My paper › Communities most likely to be warm to it |
+| 23 | **Big labs steering the field** (a follow-up wave after prominent teams step in) | exp11: no wave by others in the neighbourhood (gain about 0, both "novel for the field" and "new for the team"); big authors' non-novel papers sit in mature areas that grow less; their small citation edge is the insider effect; big names entering a community do not predict its growth | Not supported here; steering may run through channels outside the corpus | — |
 
 ## Borrowed ideas (exp6)
 
