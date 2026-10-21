@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 from collections import Counter, defaultdict
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -349,6 +350,15 @@ def bridges(ctx: Ctx, T: int) -> list[dict]:
         meth = meth[meth.year <= T]
         cell_papers = (prob[["paper_id", "cluster_id"]].merge(meth[["paper_id", "cluster_id"]], on="paper_id",
                                                               suffixes=("_p", "_m")))
+        # item-based collaborative filtering on the problem x method matrix: methods similar (by
+        # which problems use them) to the ones P already uses. Backtest: AUC 0.70-0.80 vs the
+        # recipe's centroid-neighbour score at about random (08b-signal-experiments.md).
+        L = np.log1p(M.loc[P].to_numpy(dtype=float))
+        Lc = L / np.maximum(np.linalg.norm(L, axis=0, keepdims=True), 1e-9)
+        Sm = Lc.T @ Lc
+        np.fill_diagonal(Sm, 0)
+        CF = L @ Sm
+        mcols = list(M.columns)
         for i, Pc in enumerate(P):
             nn = np.argsort(-sim[i])[:sp.transfer_neighbors]
             w = np.clip(sim[i, nn], 0, None)
@@ -356,19 +366,30 @@ def bridges(ctx: Ctx, T: int) -> list[dict]:
                 if M.loc[Pc, m] > 0:
                     continue
                 has = np.array([M.loc[P[j], m] > 0 for j in nn])
-                if not has.any():
+                cf = float(CF[i, mcols.index(m)])
+                if sp.transfer_method == "item_cf":
+                    if cf <= 0:
+                        continue
+                elif not has.any():
                     continue
-                score = float((w * has).sum() / w.sum())
+                score = float((w * has).sum() / w.sum()) if has.any() else 0.0
                 # the indicator saturates at 1 for big method clusters; tie-break by how much
                 # of the neighbours' output uses the method
                 usage = float((w * np.array([M.loc[P[j], m] / max(M.loc[P[j]].sum(), 1) for j in nn])).sum() / w.sum())
                 score += 1e-3 * usage
+                recipe_score = score
+                if sp.transfer_method == "item_cf":
+                    score = cf
+                similar_used = [mcols[j] for j in np.argsort(-Sm[mcols.index(m)])
+                                if M.loc[Pc, mcols[j]] > 0][:3]
                 donors = [P[j] for j in nn[has]][:3]
                 ev = cell_papers[(cell_papers.cluster_id_m == m) & cell_papers.cluster_id_p.isin(donors)].paper_id.head(6)
                 rows.append(_row(ctx, "bridge_method_transfer",
                                  {"problem_cluster": Pc, "method_cluster": m, "problem_label": ctx.label.get(Pc),
                                   "method_label": ctx.label.get(m)}, score, 0,
-                                 {"transfer_score": round(float((w * has).sum() / w.sum()), 4),
+                                 {"item_cf": round(cf, 4), "recipe_transfer_score": round(recipe_score, 4),
+                                  "similar_methods_already_used": [{"cluster": c, "label": ctx.label.get(c)}
+                                                                   for c in similar_used],
                                   "neighbor_usage_share": round(usage, 4),
                                   "neighbors_using_method": [{"cluster": P[j], "label": ctx.label.get(P[j]),
                                                               "sim": round(float(sim[i, j]), 4)} for j in nn[has]],
@@ -483,7 +504,7 @@ WHAT = {
 def judge(ctx: Ctx, rows: list[dict]) -> float:
     """Send the top candidates per bridge type to a stronger LLM; reorder, never add."""
     sp = ctx.sp
-    todo = [r for r in rows if r["signal_type"].startswith("bridge_") and r["rank"] <= sp.judge_top]
+    todo = [r for r in rows if r["signal_type"] in WHAT and r["rank"] <= sp.judge_top]
     if not todo:
         return 0.0
     ids = sorted({p for r in todo for p in r["evidence_paper_ids"]})
@@ -624,23 +645,7 @@ def influence(ctx: Ctx, T: int, growth: pd.DataFrame) -> tuple[list[dict], pd.Da
     subst_by_author = au[au.paper_id.isin(subst.cited_id)].merge(
         subst.groupby("cited_id").size().rename("n"), left_on="paper_id", right_index=True).groupby("author_id").n.sum()
 
-    # ---- recent papers: bibliographic coupling (shared references) as an influence proxy
-    # surveys share references with almost everything, so they are left out of this ranking
-    surveys = set(ctx.con.execute("""SELECT paper_id FROM facets WHERE facet = 'contribution_type'
-                                     AND text = 'survey'""").df().paper_id)
-    recent = papers[(papers.year >= T - sp.recent_years + 1) & ~papers.paper_id.isin(surveys)].paper_id
-    Rm = Cm[[pidx[p] for p in recent]]
-    coupling = (Rm @ Cm.T).tocsr()
-    for rank_src in [None]:
-        deg = []
-        for row_i, p in enumerate(recent):
-            r = coupling.getrow(row_i)
-            mask = (r.data >= sp.coupling_min_shared) & (r.indices != pidx[p])
-            deg.append((p, int(mask.sum()), r.indices[mask][np.argsort(-r.data[mask])][:5]))
-        for rank, (p, d, nb) in enumerate(sorted(deg, key=lambda t: -t[1])[:sp.top_n], 1):
-            rows.append(_row(ctx, "recent_paper_coupling", {"paper_id": p, "title": ctx.papers.set_index("paper_id").title.get(p)},
-                             float(d), rank, {"coupled_papers": d, "min_shared_refs": sp.coupling_min_shared},
-                             [p] + [papers.paper_id.iloc[j] for j in nb], T))
+    # recent papers: see early_work() (bibliographic coupling is one of its features)
 
     # ---- institutions: author scores through authorships, weighted 1 / #institutions
     inst = au.dropna(subset=["institution_ids"]).copy()
@@ -664,6 +669,187 @@ def influence(ctx: Ctx, T: int, growth: pd.DataFrame) -> tuple[list[dict], pd.Da
     log.info("influence: %d CD papers, %d seeders, %d brokers, %d authors with substantive citations",
              len(cd_df), len(seed_score), len(br), len(extra))
     return rows, paper_scores
+
+
+# =============================================================== backtested paper-level signals
+
+MODELS = Path(__file__).with_name("models")
+
+
+def model_score(name: str, X: pd.DataFrame) -> np.ndarray:
+    """Logistic score from a model fitted on the Phase 8 cutoffs (scripts/phase8b/fit_models.py)."""
+    spec = json.loads((MODELS / f"{name}.json").read_text())
+    Z = (X[spec["features"]].to_numpy(float) - np.array(spec["mean"])) / np.array(spec["scale"])
+    return Z @ np.array(spec["coef"]) + spec["intercept"]
+
+
+def _ref_matrix(ctx: Ctx, paper_ids: list[str]):
+    ctx.con.register("_ids", pd.DataFrame({"paper_id": paper_ids}))
+    refs = ctx.con.execute("SELECT citing_id, cited_id FROM refs WHERE citing_id IN (SELECT paper_id FROM _ids)").df()
+    ctx.con.unregister("_ids")
+    pidx = {p: k for k, p in enumerate(paper_ids)}
+    widx = {w: k for k, w in enumerate(refs.cited_id.unique())}
+    R = sparse.csr_matrix((np.ones(len(refs)), (refs.citing_id.map(pidx), refs.cited_id.map(widx))),
+                          shape=(len(pidx), max(len(widx), 1)))
+    R.data[:] = 1
+    return R, pidx
+
+
+def paper_bridges(ctx: Ctx, T: int) -> list[dict]:
+    """Per problem cluster X: innovation papers no X paper cites yet, ranked by the backtested
+    adoption model (popularity, bibliographic coupling with X, similarity to X's problems and to its
+    stated limitations, age). 'Hidden gems' are candidates cited at most once in the corpus."""
+    sp, ver = ctx.sp, ctx.p.embedding.version
+    prob = ctx.assignment("problem", sp.bridge_alpha).dropna(subset=["cluster_id"])
+    prob = prob[prob.year <= T]
+    lab = prob.set_index("paper_id").cluster_id
+    ids = ctx.papers[ctx.papers.year <= T].paper_id.tolist()
+    R, pidx = _ref_matrix(ctx, ids)
+    e = ctx.edges.assign(cy=ctx.edges.citing_id.map(ctx.year))
+    e = e[e.cy <= T]
+    pop = e.groupby("cited_id").size()
+    cited_by = e.assign(X=e.citing_id.map(lab)).dropna(subset=["X"]).groupby("X").cited_id.apply(set)
+    iid, iv = embed.load_vectors("innovation", ids=list(lab.index), version=ver)
+    lid, lv = embed.load_vectors("limitations", ids=list(lab.index), version=ver)
+    qid, qv = embed.load_vectors("problem", ids=list(lab.index), version=ver)
+    if not iid or not qid:
+        return []
+    if len(lid):
+        gc = lv.mean(axis=0)
+        gc /= np.linalg.norm(gc)
+        generic_cut = np.quantile(lv @ gc, 1 - sp.generic_limitation_drop)
+    lpos, qpos = {x: k for k, x in enumerate(lid)}, {x: k for k, x in enumerate(qid)}
+    cX = lab.reindex(iid).to_numpy()
+    clusters = sorted(lab.unique())
+    cix = {c: k for k, c in enumerate(clusters)}
+    Mx = sparse.csr_matrix((np.ones(len(lab)), ([cix[c] for c in lab.values], [pidx[x] for x in lab.index])),
+                           shape=(len(clusters), len(pidx)))
+    size = np.asarray(Mx.sum(axis=1)).ravel()
+    coup = ((Mx @ R) @ R[[pidx[x] for x in iid]].T).toarray() / size[:, None]
+    titles = ctx.papers.set_index("paper_id").title
+    rows = []
+    for X in clusters:
+        members = lab.index[lab.values == X]
+        Q = [qpos[x] for x in members if x in qpos]
+        if len(Q) < 5:
+            continue
+        qc = qv[Q].mean(axis=0)
+        qc /= np.linalg.norm(qc)
+        L = [lpos[x] for x in members if x in lpos]
+        Lv = lv[L] if L else np.zeros((0, iv.shape[1]), np.float32)
+        Lids = [lid[k] for k in L]
+        if len(Lv):
+            keep = (Lv @ gc) <= generic_cut
+            Lv, Lids = Lv[keep], [x for x, k in zip(Lids, keep) if k]
+        already = cited_by.get(X, set())
+        idx = np.array([k for k, x in enumerate(iid) if cX[k] != X and x not in already])
+        if not len(idx):
+            continue
+        S = iv[idx] @ Lv.T if len(Lv) else None
+        prob_sim = iv[idx] @ qc
+        lim3 = np.sort(S, axis=1)[:, -3:].mean(axis=1) if S is not None and S.shape[1] else prob_sim
+        feats = pd.DataFrame({
+            "lpop": np.log1p([pop.get(iid[k], 0) for k in idx]),
+            "lcoup": np.log1p(coup[cix[X], idx] * 100), "prob_sim": prob_sim, "lim_sim3_f": lim3,
+            "age": [T - ctx.year[iid[k]] for k in idx]})
+        sc = model_score("paper_bridges", feats)
+        # two lists per cluster: most likely adoptions, and hidden gems (cited at most once so far),
+        # ranked by the same model (long-tail AUC 0.84 in the backtest)
+        order = np.argsort(-sc)
+        gems = [j for j in order if feats.lpop.iloc[j] <= np.log1p(1)][:sp.paper_bridges_gems_per_cluster]
+        picks = [(j, False) for j in order[:sp.paper_bridges_per_cluster]] + [(j, True) for j in gems]
+        for rank, (j, gem_list) in enumerate(picks, 1):
+            i = iid[idx[j]]
+            best_lim = Lids[int(np.argmax(S[j]))] if S is not None and S.shape[1] else None
+            rows.append(_row(ctx, "bridge_paper_gem" if gem_list else "bridge_paper", {"cluster_id": X, "label": ctx.label.get(X), "paper_id": i,
+                                                   "title": titles.get(i), "from_cluster": cX[idx[j]]},
+                             float(sc[j]), rank,
+                             {"citations_so_far": int(pop.get(i, 0)), "hidden_gem": bool(pop.get(i, 0) <= 1),
+                              "coupling": round(float(coup[cix[X], idx[j]]), 4),
+                              "problem_sim": round(float(prob_sim[j]), 4), "limitation_sim": round(float(lim3[j]), 4),
+                              "best_matching_limitation": best_lim, "kind": ctx.kind.get(X)},
+                             [i] + ([best_lim] if best_lim else []), T, kind=str(ctx.kind.get(X) or "stable")))
+    out, seen = [], {}  # rank within each (cluster, list)
+    for r in rows:
+        key = (json.loads(r["subject"])["cluster_id"], r["signal_type"])
+        seen[key] = seen.get(key, 0) + 1
+        r["rank"] = seen[key]
+        out.append(r)
+    return out
+
+
+def early_work(ctx: Ctx, T: int, growth: pd.DataFrame, novelty: pd.Series | None) -> list[dict]:
+    """Recent papers (published T-1..T) likely to become top-cited for their year, from features
+    available now (backtested model; author fame deliberately left out)."""
+    sp = ctx.sp
+    papers = ctx.papers[ctx.papers.year <= T]
+    ids = papers.paper_id.tolist()
+    R, pidx = _ref_matrix(ctx, ids)
+    # new research only: OpenAlex dates new editions of old books as new works
+    types = ctx.con.execute("SELECT paper_id, type FROM papers").df().set_index("paper_id")["type"]
+    recent = [x for x in papers[papers.year >= T - 1].paper_id
+              if types.get(x) not in ("book", "book-chapter", "reference-entry", "paratext", "erratum")]
+    if not recent:
+        return []
+    Rn = R[[pidx[x] for x in recent]]
+    C = (Rn @ R.T).tocsr()
+    C.data = (C.data >= 2).astype(float)
+    coup = np.maximum(np.asarray(C.sum(axis=1)).ravel() - 1, 0)
+    e = ctx.edges.assign(cy=ctx.edges.citing_id.map(ctx.year))
+    cites = e[e.cy <= T].groupby("cited_id").size()
+    a = ctx.assignment(sp.influence_facet, sp.influence_alpha).set_index("paper_id")
+    E = growth.set_index("cluster_id").E if len(growth) else pd.Series(dtype=float)
+    f = ctx.con.execute("""SELECT paper_id, facet, text FROM facets WHERE facet IN ('contribution_type',
+                           'has_quantitative_result')""").df().pivot_table(index="paper_id", columns="facet",
+                                                                          values="text", aggfunc="first")
+    n_auth = ctx.authorships.groupby("paper_id").author_id.nunique()
+    ct = f["contribution_type"] if "contribution_type" in f else pd.Series(dtype=object)
+    hq = f["has_quantitative_result"] if "has_quantitative_result" in f else pd.Series(dtype=object)
+    X = pd.DataFrame({"paper_id": recent})
+    X["l_cites_so_far"] = np.log1p([cites.get(x, 0) for x in recent])
+    X["l_coupling"] = np.log1p(coup)
+    X["l_n_refs"] = np.log1p(np.asarray(Rn.sum(axis=1)).ravel())
+    X["cluster_E"] = [E.get(a.cluster_id.get(x)) if x in a.index else np.nan for x in recent]
+    X["centrality"] = [a.sim_to_centroid.get(x) if x in a.index else np.nan for x in recent]
+    X["novelty"] = [novelty.get(x) if novelty is not None else np.nan for x in recent]
+    X["l_n_authors"] = np.log1p([n_auth.get(x, 0) for x in recent])
+    X["survey"] = [float(ct.get(x) == "survey") for x in recent]
+    X["theory"] = [float(ct.get(x) == "theory") for x in recent]
+    X["quant"] = [float(hq.get(x) == "true") for x in recent]
+    for c in ("cluster_E", "centrality", "novelty"):
+        X[c] = X[c].astype(float).fillna(X[c].astype(float).median())
+    X["score"] = model_score("early_work", X.fillna(0))
+    titles = ctx.papers.set_index("paper_id").title
+    rows = []
+    for rank, r in enumerate(X.sort_values("score", ascending=False).head(sp.top_n).itertuples(), 1):
+        rows.append(_row(ctx, "early_work", {"paper_id": r.paper_id, "title": titles.get(r.paper_id)},
+                         float(r.score), rank,
+                         {"year": int(ctx.year[r.paper_id]), "citations_so_far": int(round(np.expm1(r.l_cites_so_far))),
+                          "coupled_papers": int(round(np.expm1(r.l_coupling))), "cluster_E": round(float(r.cluster_E), 3),
+                          "novelty": round(float(r.novelty), 4)}, [r.paper_id], T))
+    return rows
+
+
+def local_momentum(ctx: Ctx, T: int, k: int = 15) -> pd.DataFrame:
+    """For papers from T-1..T: share of year-T papers inside the ball of its k nearest earlier
+    neighbours versus the share of year T-1 papers (log ratio). Feeds the 'rising pockets' layer;
+    backtest: top-50 hit rate about 2x random (modest)."""
+    ids, v = embed.load_vectors("abstract", ids=ctx.papers.paper_id.tolist(), version=ctx.p.embedding.version)
+    v = embed.truncate(v, ctx.p.embedding.graph_dim)
+    yrs = np.array([ctx.year[i] for i in ids])
+    order = np.argsort(yrs, kind="stable")
+    ids, v, yrs = [ids[i] for i in order], v[order], yrs[order]
+    past, recent = np.where(yrs <= T)[0], np.where((yrs >= T - 1) & (yrs <= T))[0]
+    yT, yT1 = np.where(yrs == T)[0], np.where(yrs == T - 1)[0]
+    if len(recent) == 0 or len(yT) == 0 or len(yT1) == 0:
+        return pd.DataFrame()
+    S = v[recent] @ v[past].T
+    S[np.arange(len(recent)), np.searchsorted(past, recent)] = -1   # drop self
+    radius = -np.partition(-S, k - 1, axis=1)[:, k - 1]
+    mom = np.log(((v[recent] @ v[yT].T >= radius[:, None]).mean(axis=1) + 1e-3)
+                 / ((v[recent] @ v[yT1].T >= radius[:, None]).mean(axis=1) + 1e-3))
+    return pd.DataFrame({"paper_id": [ids[i] for i in recent], "metric": "local_momentum", "facet": "abstract",
+                         "value": mom})
 
 
 # =============================================================== viz tables
@@ -767,6 +953,11 @@ def build_signals(con, run_id: str, p: RunParams, skip_judge: bool = False) -> d
     inf_rows, cd_scores = influence(ctx, T, g)
     rows += inf_rows
     paper_scores.append(cd_scores)
+
+    # backtested paper-level signals (Phase 8b)
+    rows += paper_bridges(ctx, T)
+    rows += early_work(ctx, T, g, nov.get("abstract"))
+    paper_scores.append(local_momentum(ctx, T))
 
     sig = pd.DataFrame(rows)
     store.replace_run_rows(con, "signals", run_id, sig)

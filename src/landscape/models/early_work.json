@@ -1,0 +1,61 @@
+{
+  "name": "early_work",
+  "features": [
+    "l_cites_so_far",
+    "l_coupling",
+    "l_n_refs",
+    "cluster_E",
+    "centrality",
+    "novelty",
+    "l_n_authors",
+    "survey",
+    "theory",
+    "quant"
+  ],
+  "mean": [
+    0.200529,
+    4.105485,
+    3.839835,
+    0.3685,
+    0.934328,
+    0.09312,
+    1.399629,
+    0.09507,
+    0.134585,
+    0.205399
+  ],
+  "scale": [
+    0.462471,
+    1.715364,
+    0.829702,
+    1.8457,
+    0.017636,
+    0.027353,
+    0.40339,
+    0.293312,
+    0.34128,
+    0.403993
+  ],
+  "coef": [
+    0.788361,
+    0.747032,
+    -0.178697,
+    0.078276,
+    0.270725,
+    -0.487426,
+    0.093511,
+    -0.131408,
+    -0.076964,
+    -0.143264
+  ],
+  "intercept": -0.5064221183757196,
+  "trained_on": [
+    2020,
+    2021,
+    2022,
+    2023
+  ],
+  "n_rows": 2556,
+  "n_positive": 490,
+  "note": "P(a paper from year T is top-quartile for its year in corpus citations over T+1..T+3), without author fame. Leave-one-cutoff-out: AUC 0.815, p@50 0.67 (citations so far 0.62, coupling 0.50, base rate 0.19)."
+}

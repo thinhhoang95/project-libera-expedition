@@ -1,0 +1,41 @@
+{
+  "name": "paper_bridges",
+  "features": [
+    "lpop",
+    "lcoup",
+    "prob_sim",
+    "lim_sim3_f",
+    "age"
+  ],
+  "mean": [
+    0.723684,
+    1.57021,
+    0.871519,
+    0.796682,
+    3.325077
+  ],
+  "scale": [
+    0.909777,
+    1.455193,
+    0.021859,
+    0.020156,
+    6.714115
+  ],
+  "coef": [
+    0.634017,
+    0.849768,
+    0.512715,
+    0.162807,
+    0.116734
+  ],
+  "intercept": -0.9526655688398121,
+  "trained_on": [
+    2020,
+    2021,
+    2022,
+    2023
+  ],
+  "n_rows": 244794,
+  "n_positive": 3757,
+  "note": "P(problem cluster X cites innovation paper i within 3 years | not cited yet). Leave-one-cutoff-out: p@10 per cluster 0.234 (popularity 0.186, random 0.017), AUC 0.84, long-tail AUC 0.84."
+}

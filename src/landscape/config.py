@@ -134,6 +134,9 @@ class SignalParams:
     lim_flow_penalty_power: float = 0.5  # recipe: 1.0
     generic_limitation_drop: float = 0.2  # drop the most generic 20% of limitation statements
     transfer_neighbors: int = 10
+    transfer_method: str = "item_cf"  # "item_cf" (backtested) or "recipe" (centroid-neighbour share)
+    paper_bridges_per_cluster: int = 10
+    paper_bridges_gems_per_cluster: int = 5
     unresolved_min_papers: int = 5
     unresolved_match: float | str = "auto"  # recipe 0.7; "auto" = quantile of lim->inn similarity
     unresolved_match_quantile: float = 0.99
