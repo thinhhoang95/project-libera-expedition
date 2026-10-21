@@ -3,7 +3,10 @@
     build_orientation(run_id)  ->  data/projects/<run>/portfolio/
         reading_paths.parquet   "Read this first" per community: the community's most cited papers interleaved with
                                 the sources of its current methods (experiment 13: newcomers cite the first, build on
-                                the second; alternating covers most of both)
+                                the second; alternating covers most of both) and its quiet foundations (experiment 17:
+                                built on but rarely cited; role "quiet foundation")
+        (also the discovery artefacts of discovery.py: quiet foundations, tools to learn, untried applications,
+        crowding)
         entry_routes.parquet    how people entered each community: entries of the latest year with complete
                                 three-year outcomes, by strategy, with outcome rates and example entries; plus the
                                 strategy mix of recent entries (experiment 12)
@@ -145,7 +148,8 @@ def lasting(f: _Field) -> pd.DataFrame:
 
 # ------------------------------------------------------------------ "read this first" (experiment 13)
 
-def reading_paths(f: _Field, L: pd.DataFrame | None, k: int = 10) -> pd.DataFrame:
+def reading_paths(f: _Field, L: pd.DataFrame | None, k: int = 10, Q: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Classics, sources of current methods and (when Q is given, experiment 17) quiet foundations, interleaved."""
     T = f.t_live
     inn_ids = list(f.IP)
     inn_year = np.array([f.year.get(x, 9999) for x in inn_ids])
@@ -167,13 +171,15 @@ def reading_paths(f: _Field, L: pd.DataFrame | None, k: int = 10) -> pd.DataFram
                 if len(hit):
                     src[inn_ids[hit[np.argmin(inn_year[hit])]]] += 1
         lineage = [p for p, _ in src.most_common()][:k]
+        quiet = [] if Q is None else Q[(Q.cluster_id == X) & Q.quiet_foundation].sort_values(
+            "attributed_quiet", ascending=False).paper_id.tolist()[:k]
         order, seen = [], set()
-        for a, b in zip(classics + [None] * k, lineage + [None] * k):
-            for p, role in ((a, "classic"), (b, "source of current methods")):
+        for a, b, c in zip(classics + [None] * k, lineage + [None] * k, quiet + [None] * k):
+            for p, role in ((a, "classic"), (b, "source of current methods"), (c, "quiet foundation")):
                 if p and p not in seen:
                     seen.add(p)
                     order.append((p, role))
-        for rank, (p, role) in enumerate(order[:2 * k], 1):
+        for rank, (p, role) in enumerate(order[:3 * k if Q is not None else 2 * k], 1):
             rows.append({"cluster_id": X, "label": f.labels.get(X, X), "rank": rank, "paper_id": p,
                          "title": f.title.get(p), "year": f.year.get(p), "role": role,
                          "cited_by_community": int(cited.get(p, 0)), "source_of_methods": int(src.get(p, 0)),
@@ -322,7 +328,13 @@ def build_orientation(run: str, db_path: str | None = None) -> dict:
     out = _project(run, "portfolio")
     L = lasting(f)
     L.to_parquet(out / "lasting.parquet", index=False)
-    P = reading_paths(f, L)
+    try:  # experiments 17, 19, 20, 23 (docs/features/10-orientation-experiments.md)
+        from .discovery import build_discovery
+    except ImportError:  # run as a script: python src/landscape/orientation.py
+        from landscape.discovery import build_discovery
+
+    dstats, Q = build_discovery(f, con, L, out)
+    P = reading_paths(f, L, Q=Q)
     P.to_parquet(out / "reading_paths.parquet", index=False)
     E = entry_routes(f)
     E.to_parquet(out / "entry_routes.parquet", index=False)
@@ -333,7 +345,8 @@ def build_orientation(run: str, db_path: str | None = None) -> dict:
              "lasting_papers": int(L.lasting.sum()), "papers_scored": len(L),
              "reading_paths": int(P.cluster_id.nunique()), "entry_rows": len(E),
              "entries_with_outcomes": int(E.entries.sum()), "outcome_year": f.t_live - 3,
-             "survey_gaps": int((G.status == "survey gap").sum()), "survey_thin": int((G.status == "thin").sum())}
+             "survey_gaps": int((G.status == "survey gap").sum()), "survey_thin": int((G.status == "thin").sum()),
+             **dstats}
     (out / "orientation_summary.json").write_text(json.dumps(stats, indent=2) + "\n")
     return stats
 

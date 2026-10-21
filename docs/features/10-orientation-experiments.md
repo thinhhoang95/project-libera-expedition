@@ -457,6 +457,16 @@ uv run --no-sync python src/landscape/orientation.py --run-id dro-pilot   # ~3 s
 | `lasting.parquet` | **Lasting marker**, per paper from 2018 on: breadth at publication (how many communities' earlier work is already close to its idea), ranked among equally generic ideas; *lasting* = top third and breadth ≥ 2. Older papers are *not assessed* (the map is too thin before 2018) | exp14 | 1,383 of 4,311 assessed |
 | `survey_gaps.parquet` | **Where a survey is missing**, per community: its share of surveys over the last three complete years against the field's; *survey gap* (< 0.5×), *thin* (< 0.75×), *covered*; communities with fewer than 10 recent papers are not judged; with its latest survey and the survey it cites most | exp15 | 4 gaps, 3 thin of 25 communities (2023–2025) |
 
+**Discovery artefacts** (`src/landscape/discovery.py`, built by `build_orientation`, so by `landscape portfolio`;
+pilot as of 2025):
+
+| File | Feature | Backed by | Pilot |
+| --- | --- | --- | --- |
+| `quiet_foundations.parquet` (+ role `quiet foundation` in `reading_paths.parquet`) | **Quiet foundations**: papers the field builds on without citing them. Per paper: uncited later work it is the earliest source of (`attributed_quiet`), all of it (`attributed`), citations by others, rank among equally generic papers in equally busy areas, `quiet_foundation` flag, `outside_top50_cited`, up to 3 builders not citing it | exp17 | 261 quiet foundations, 126 outside their community's 50 most cited |
+| `tools_to_learn.parquet` | **Tools to learn**, per problem community: the method communities its recent papers use (≥ 2 papers), with `status` settled / in flux / in between from breadth, dispersion and inward innovation, and 2 example papers. Communities of literature reviews are left out | exp20 | 145 rows; 7 settled method communities |
+| `untried_applications.parquet`, `domain_centroids.parquet` | **Untried applications**, per problem community: up to 6 application domains it has not used, ranked by semantic fit, with 3 example domain statements. `domain_centroids` lets a paper analysed by DOI be ranked the same way (cosine with its problem vector) | exp19 (small sample) | 101 rows |
+| `crowding.parquet`, `crowding_thresholds.json` | **Crowding and demand**, per paper: others posing the same question in the last 3 years, near duplicates (same question and method), stated limitations it answers, with examples. The thresholds let the web app compute the same for a DOI paper | exp23 | 4,532 papers |
+
 **How to present them:**
 - **Read this first:** say which role each paper plays. The classics are what newcomers end up citing; the sources
   of current methods are what they end up building on. Surveys are not the default, because newcomers here neither
@@ -466,6 +476,13 @@ uv run --no-sync python src/landscape/orientation.py --run-id dro-pilot   # ~3 s
   examples. It is not advice that guarantees an outcome.
 - **Where a survey is missing:** a status with its evidence. A survey written where surveys are scarce has been
   taken up by others far more often (experiment 15), cited rather than built on. It is a gap to fill, not a guarantee.
+- **Quiet foundations:** "built on, rarely cited", with up to 3 papers that build on it without citing it. In Read
+  this first they are the third role next to classics and sources of current methods.
+- **Tools to learn:** settled tools first ("learn these"); "in flux" ones as "watch these".
+- **Untried applications:** label as early evidence (24 filled cells on the pilot); show the domain examples, since
+  domains are clusters, not named fields.
+- **Crowding and demand:** a gauge, worded as experiment 23 found it ("crowded questions draw attention"), never as a
+  warning against entering.
 - **Lasting:** a small marker with its evidence. Breadth at publication is the clearest trait of ideas still used
   5+ years later; novel ideas fade faster, and early citations say nothing.
 
