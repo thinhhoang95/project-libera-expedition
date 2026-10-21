@@ -96,6 +96,14 @@ There is one map, one grid and one time axis, as in the recipe.
 The accent colour (`#e8590c`) is used only for the selection, the window/playhead and new
 grid cells.
 
+### Start here and My paper (Phase 9)
+
+The first two views. *Start here* orients a reader in the field: what the map covers, its
+communities, where it borrows from, what to read and what is being imported now, opportunities,
+coverage gaps, and how far to trust each view. *My paper* scores which communities are most likely
+to be warm to a paper, and lists the opportunities around it. See
+[09-portfolio.md](09-portfolio.md).
+
 ### Experiments (Phase 8 / 8b)
 
 Every experiment's saved result tables for the selected run: the Phase 8 backtest summary and the

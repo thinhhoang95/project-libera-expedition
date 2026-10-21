@@ -9,6 +9,11 @@ LLM judge, influence), a **Phase 6b** explorer prototype that shows each signal 
 corpus (see [08-backtest.md](docs/features/08-backtest.md)). Phase 7 (integrity) is not built. Feature docs are in
 [docs/features/](docs/features/).
 
+The explorer opens on **Start here** (orientation in the field) and **My paper** (which communities are
+most likely to be warm to a paper, and the opportunities around it): see
+[09-portfolio.md](docs/features/09-portfolio.md). What each view is backed by is in the
+[findings portfolio](docs/features/findings-portfolio.md); every experiment is in the Experiments view.
+
 The [Phase 8c research lab](docs/features/08c-research-lab.md) audits sampling-sensitive
 directions, compares broader bridge lists and semantic ablations, and exposes underconnected
 communities and topic-specific people roles. Open **Research lab** in the explorer for the results.
@@ -43,6 +48,9 @@ uv run landscape core     --run-id dro-pilot   # Phase 5
 uv run landscape viz      --run-id dro-pilot   # Phase 6b: fixed UMAP layouts for the explorer
 uv run landscape signals  --run-id dro-pilot   # Phase 6: signals, LLM judge, explorer layer tables
 uv run landscape backtest --run-id dro-pilot   # Phase 8: cutoffs 2020-2023, precision@k vs baselines
+uv run landscape external --run-id dro-pilot   # external works the field cites (~$1 of LLM extraction, once)
+uv run landscape portfolio --run-id dro-pilot  # Start here / My paper artefacts (import map, imports now, warmth)
+uv run landscape my-paper --run-id dro-pilot --doi <DOI>  # any paper: communities warm to it, opportunities
 uv run python scripts/phase8c/prepare_cutoffs.py --run-id dro-pilot --cutoffs 2019
 uv run landscape research-lab --run-id dro-pilot  # offline diagnostics and experiments, including a complete chronological test
 uv run landscape status   --run-id dro-pilot

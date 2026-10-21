@@ -1,0 +1,48 @@
+{
+  "name": "community_warmth",
+  "features": [
+    "l_size",
+    "lcoup",
+    "prob_sim",
+    "lim_sim3_f",
+    "sim_recent"
+  ],
+  "mean": [
+    4.817705,
+    1.57021,
+    0.871519,
+    0.796682,
+    0.873493
+  ],
+  "scale": [
+    0.636312,
+    1.455193,
+    0.021859,
+    0.020156,
+    0.021817
+  ],
+  "coef": [
+    0.183006,
+    0.640364,
+    0.166232,
+    0.054978,
+    0.492155
+  ],
+  "intercept": -0.6807766191222058,
+  "trained_on": [
+    2020,
+    2021,
+    2022,
+    2023
+  ],
+  "n_rows": 244794,
+  "n_positive": 3757,
+  "note": "P(problem community X cites paper i within 3 years | not citing it yet), ranked within a paper. Leave-one-cutoff-out: mean within-paper AUC 0.814, hit@3 0.686, MRR 0.570 (experiment 10).",
+  "feature_definitions": {
+    "l_size": "log(number of papers in X)",
+    "lcoup": "log1p(100 * shared references between i and X's papers / size of X)",
+    "prob_sim": "cosine(i innovation, X's mean problem vector), 256-d",
+    "lim_sim3_f": "mean of the 3 highest cosines(i innovation, X's non-generic limitations), else prob_sim",
+    "sim_recent": "max cosine(i innovation, method/innovation of X's papers from the last 3 years)"
+  }
+}

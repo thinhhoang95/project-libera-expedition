@@ -27,6 +27,7 @@ PILOT_DECISIONS = {
     "exp7_coupling": "findings: coupling needs no received citations but defines the reachable set",
     "exp8_birth": "not demonstrated; live list frozen in the prospective snapshot (low confidence)",
     "exp9_realized": "findings: 95% of realized uptake is uncited; no special foresight from semantics",
+    "exp10_warmth": "adopted: community warmth (My paper view; models/community_warmth.json)",
 }
 ORDER = list(PILOT_DECISIONS)
 SCRIPTS = {
@@ -36,10 +37,11 @@ SCRIPTS = {
     "exp4_method_transfer": ["exp4_method_transfer.py"],
     "exp5_beyond_rich_get_richer": ["fetch_counts_by_year.py", "exp6_imports.py", "exp5_features.py",
                                     "exp5_evaluate.py [logit] [hgb]"],
-    "exp6_imports": ["external_mine.py fetch extract embed", "exp6_imports.py"],
+    "exp6_imports": ["exp6_imports.py (after `landscape external`)"],
     "exp7_coupling": ["exp7_coupling.py"],
     "exp8_birth": ["exp8_birth.py"],
     "exp9_realized": ["exp9_realized.py", "exp9_within_candidate.py"],
+    "exp10_warmth": ["exp10_warmth.py"],
 }
 
 

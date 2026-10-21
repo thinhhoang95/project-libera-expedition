@@ -137,7 +137,7 @@ save("bridge_lim_inn_baseline_random", rand, "Random community-pair baseline (se
      "bridge_lim_inn")
 
 # ---- 5. external imports (exp6 live list), vs the current in-field rate
-lp = experiments.work_dir(RUN) / "external" / "live_imports.parquet"
+lp = store.DATA / "portfolio" / RUN / "live_imports.parquet"  # built by `landscape portfolio`
 if lp.exists():
     L = pd.read_parquet(lp)
     save("external_imports", L.head(100)[["paper_id", "title", "subfield", "score", "outside_field", "recent_citers",
@@ -150,6 +150,19 @@ if lp.exists():
     save("external_imports_baseline_rate", L.sort_values("recent_citers", ascending=False).head(100)
          [["paper_id", "title", "recent_citers"]], "Baseline: the 100 most cited by the field in the last 3 years",
          "as external_imports", "external_imports")
+
+# ---- 5b. community warmth (My paper): top-3 warm communities for every recent paper, vs the 3 largest
+wp = store.DATA / "portfolio" / RUN / "warmth.parquet"
+if wp.exists():
+    W = pd.read_parquet(wp)
+    W = W[W.paper_id.isin(set(papers[papers.year >= y1 - 1].paper_id)) & W["rank"].notna()]
+    save("community_warmth", W[W["rank"] <= 3][["paper_id", "cluster_id", "rank", "warmth"]],
+         "For each paper from the last two years: the 3 warmest communities among those not citing it yet "
+         "(experiment 10 model)", "a paper published after the snapshot, assigned to the community, cites the paper "
+         "(per paper: did any of its 3 communities cite it)", None)
+    W["size_rank"] = W.groupby("paper_id").l_size.rank(ascending=False, method="first")
+    save("community_warmth_baseline_size", W[W.size_rank <= 3][["paper_id", "cluster_id", "size_rank"]],
+         "Baseline: the 3 largest communities not citing the paper yet", "as community_warmth", "community_warmth")
 
 # ---- 6. rising pockets and emerging clusters vs random / size
 lm = con.execute("""SELECT paper_id, value FROM paper_scores WHERE run_id = ? AND metric = 'local_momentum'""",

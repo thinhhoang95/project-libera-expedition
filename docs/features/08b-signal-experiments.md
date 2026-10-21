@@ -29,11 +29,12 @@ uv run python scripts/phase8b/fit_models.py           # refits the two productio
 uv run python scripts/phase8b/fetch_counts_by_year.py # exp5 only: OpenAlex yearly counts (~$0.02, cached)
 uv run python scripts/phase8b/exp5_features.py        # writes data/backtest/exp5_papers.parquet
 uv run python scripts/phase8b/exp5_evaluate.py [logit|hgb] [y_...]
-uv run python scripts/phase8b/external_mine.py [fetch] [extract] [embed]   # exp6 data (~$1.10 LLM)
+uv run landscape external --run-id dro-pilot            # exp6 data (~$1.10 LLM once; data/external/<run>/)
 uv run python scripts/phase8b/exp6_imports.py         # before exp5_features.py, for the borrowing family
 uv run python scripts/phase8b/exp7_coupling.py        # coupling vs semantics by stratum
 uv run python scripts/phase8b/exp8_birth.py           # community birth (needs exp6 for borrowing features)
 uv run python scripts/phase8b/exp9_realized.py && uv run python scripts/phase8b/exp9_within_candidate.py
+uv run python scripts/phase8b/exp10_warmth.py         # community warmth; writes models/community_warmth.json
 uv run python scripts/phase8b/freeze_snapshot.py      # prospective snapshot (date defaults to today)
 ```
 
@@ -56,6 +57,7 @@ leave-one-cutoff-out numbers below, not the in-sample fit.
 | 7. Coupling vs semantics | coupling needs no received citations (fresh papers: 0.65 → 0.84) but defines the reachable set (91% of adoptions share references); semantics adds +0.08 to +0.12 on fresh / uncited papers | findings |
 | 8. Community birth | best AUC 0.58–0.61; p@50 at the base rate; births are offshoots within one community, not crossovers | **not demonstrated**; live list frozen as a low-confidence prediction |
 | 9. Realized opportunities (content) | 95% of realized uptake is uncited; for a given idea, semantics ≈ coupling ≈ persistence (about 0.64) | better outcome measure; no special foresight |
+| 10. Community warmth (which communities take up a paper) | within-paper AUC 0.81, hit@3 0.69 vs 0.25 random, MRR 0.57; on the content outcome problem similarity alone is best (hit@3 0.60 vs 0.40) | **adopted**: My paper view ([09-portfolio.md](09-portfolio.md)) |
 
 ## 1. Paper-level bridges
 
@@ -466,6 +468,28 @@ anyone cited it?
   equal. Most of semantics' apparent advantage above came from generic ideas.
 - **Conclusion:** the content outcome is a better *measurement* of uptake, but it does not show
   that semantics has special foresight about who will take an idea up.
+
+## 10. Community warmth
+
+**Question.** The reverse of experiment 1: for a given paper, which communities will take it up?
+For each candidate paper at cutoff T, the communities that do not cite it yet are ranked, and a
+community is warm if it cites the paper in T+1…T+3 (or realizes it, experiment 9). The scores are
+computed within each paper (`exp10_warmth.py`).
+
+| Ranking (cited) | AUC within a paper | hit@3 | MRR |
+| --- | --- | --- | --- |
+| random | 0.50 | 0.25 | 0.25 |
+| community size | 0.64 | 0.39 | 0.32 |
+| coupling | 0.77 | 0.59 | 0.48 |
+| problem similarity | 0.71 | 0.52 | 0.45 |
+| recent closeness | 0.75 | 0.57 | 0.47 |
+| semantic (problem, limitation, recent) | 0.77 | 0.60 | 0.50 |
+| **all** | **0.81** | **0.69** | **0.57** |
+
+- **Content outcome:** problem similarity alone is best (hit@3 0.60 vs 0.40 at random); the full
+  model is not better there.
+- **Production:** the model fitted on all cutoffs is saved to `models/community_warmth.json` and
+  served by `landscape portfolio` / `my-paper` ([09-portfolio.md](09-portfolio.md)).
 
 ## Prospective snapshot (frozen 2026-10-21)
 

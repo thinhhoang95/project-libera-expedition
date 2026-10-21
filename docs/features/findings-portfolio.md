@@ -20,13 +20,13 @@ explorer's **Experiments** view keeps every result table open and re-runnable (`
 
 | # | Signal or question | Evidence (protocol) | Verdict | Where in the product |
 | --- | --- | --- | --- | --- |
-| 1 | **Papers a community will adopt** (paper bridges) | exp1: p@10 0.23 vs popularity 0.19, AUC 0.84 (leave-one-cutoff-out). 8c chronological test (train 2019, test 2022, outcomes 2023–25): 19.5% vs 13.6% | Use | Map & grid › Bridges › Papers to bring in |
+| 1 | **Papers a community will adopt** (paper bridges) | exp1: p@10 0.23 vs popularity 0.19, AUC 0.84 (leave-one-cutoff-out). 8c chronological test (train 2019, test 2022, outcomes 2023–25): 19.5% vs 13.6% | Use | Map & grid › Bridges › Papers to bring in; My paper › Papers to bring in; Start here |
 | 2 | **Hidden gems** (the same, cited ≤ 1×) | exp1: long-tail AUC 0.84 vs popularity 0.55. 8c: p@10 among papers cited ≤ 1×: 0.086 with semantics vs 0.064 without | Use: this is where popularity is blind | Papers to bring in › Hidden gems |
 | 3 | **Limitation → innovation between clusters** | Phase 8: about 2.4× random, the best-validated recipe signal (flow penalty power 0.5). 8c: only 345 papers state a limitation; shared vocabulary ≠ compatible assumptions | Use with care | Bridges › Cluster pairs (judge-rated) |
 | 4 | **Method transfer** (empty problem × method cells) | exp4: item CF AUC 0.70 / 0.80 vs popularity 0.51 / 0.62; p@50 level with a neighbour share; only 4–20 hits per cutoff | Use with care | Grid: accent diamonds |
 | 5 | **Underconnected communities** (cite each other less than expected) | 8c: 38 review hypotheses from a degree null model; not validated | Describe, for expert review | Research lab › Underconnected communities |
-| 6 | **Early work** (recent papers the field will read) | exp2: AUC 0.815, p@50 0.67 vs citations so far 0.62. exp5: predicts in-field uptake, partly audience size | Use as a reading list, not a quality ranking | People › Early work |
-| 7 | **Borrowed ideas** (imports from outside the field) | exp5: riding rising imports +0.022 AUC in-field (peer-normalized), in every population; the first importer does worse. exp6: borrowing what trends globally, from nearby, +0.016; the field imports more of what fits where its questions are moving (+0.020) and what trends globally (+0.013) | Use, as a review list | Bridges › From outside the field |
+| 6 | **Early work** (recent papers the field will read) | exp2: AUC 0.815, p@50 0.67 vs citations so far 0.62. exp5: predicts in-field uptake, partly audience size | Use as a reading list, not a quality ranking | People › Early work; Start here › Read now; My paper |
+| 7 | **Borrowed ideas** (imports from outside the field) | exp5: riding rising imports +0.022 AUC in-field (peer-normalized), in every population; the first importer does worse. exp6: borrowing what trends globally, from nearby, +0.016; the field imports more of what fits where its questions are moving (+0.020) and what trends globally (+0.013) | Use, as a review list | Bridges › From outside the field; Start here › Being imported now, Where this field borrows from, Coverage gaps; My paper |
 | 8 | **Credibility** (venue, author record) | exp5: venue +0.017, author +0.012 in-field (half the raw author effect was self-citation); global author record +0.012 for global success (forward route) | Describe, as context on a paper | not ranked; visible on paper cards (venue, authors) |
 | 9 | **Topic and question semantics** (heat, typicality, question reach) | exp5: +0.03 to +0.045 on raw in-field citations, about 0 against same-topic peers: they predict the audience, not the winner. 8c: semantics adds +0.01 AUC to paper bridges, mostly for uncited papers | Describe | Map, clusters, grid |
 | 10 | **Novelty** | Phase 8 and exp2: anti-predictive of 3-year citations (AUC 0.29–0.39); novel work is recognized late | Describe: "different", not "promising" | Map › Novel papers layer |
@@ -41,6 +41,7 @@ explorer's **Experiments** view keeps every result table open and re-runnable (`
 | 19 | **Seeing a community before it forms** | exp8: best AUC 0.58–0.61, top 50 at the base rate; births are offshoots within one community, not crossovers; signals mostly point at the corpus's edges | Not demonstrated; frozen for the prospective test | — |
 | 20 | **Uptake without citation** (the content moves towards an idea) | exp9: 95% of realized uptake is uncited; for a given idea, semantics ≈ coupling ≈ persistence (about 0.64) | A better outcome measure; no special foresight | — |
 | 21 | **Prospective snapshot** (2026-10-21) | 19 frozen lists with baselines; SHA-256 manifest and protocol in docs/snapshots/ | Running: score at 6, 12 and 24 months | — |
+| 22 | **Communities warm to a paper** | exp10: a top-3 community cites the paper within 3 years for 69% of papers (25% at random); within-paper AUC 0.81 | Use | My paper › Communities most likely to be warm to it |
 
 ## Borrowed ideas (exp6)
 

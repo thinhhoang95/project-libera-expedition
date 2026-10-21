@@ -94,8 +94,9 @@ if not runs:
     st.stop()
 with st.sidebar:
     st.session_state.run_id = st.selectbox("Run", runs)
-    views = ["Map & grid", "Research lab", "Experiments", "Corpus view", "Facet review", "Cluster review"]
-    requested_view = st.query_params.get("view", "Map & grid")
+    views = ["Start here", "My paper", "Map & grid", "Research lab", "Experiments", "Corpus view", "Facet review",
+             "Cluster review"]
+    requested_view = st.query_params.get("view", "Start here")
     view = st.radio("View", views, index=views.index(requested_view) if requested_view in views else 0)
     st.session_state.reviewer = st.text_input("Reviewer", value=st.session_state.get("reviewer", ""),
                                               placeholder="your name (stored with every judgment)")
@@ -731,16 +732,16 @@ def paper_bridges_panel(sel):
 
 @st.cache_data(show_spinner=False)
 def _external(run: str, name: str, mtime: float) -> pd.DataFrame:
-    return pd.read_parquet(store.DATA / "backtest" / run / "external" / name)
+    return pd.read_parquet(store.DATA / "external" / run / name)
 
 
 def external_imports_panel(sel):
-    path = store.DATA / "backtest" / RUN / "external" / "live_imports.parquet"
+    path = store.DATA / "portfolio" / RUN / "live_imports.parquet"
     if not path.exists():
-        st.info("No external-import list for this run. Run `scripts/phase8b/external_mine.py` and "
-                "`scripts/phase8b/exp6_imports.py` (see the 08b doc).")
+        st.info(f"No external-import list for this run. Run `landscape external --run-id {RUN}` and "
+                f"`landscape portfolio --run-id {RUN}`.")
         return
-    L = _external(RUN, "live_imports.parquet", path.stat().st_mtime)
+    L = pd.read_parquet(path)
     how_to_read(
         f"Works **outside the corpus** that corpus papers cite, as of {int(L.as_of.iloc[0])}, ranked by how likely "
         "the field is to cite them more and more over the next three years. Only works with at least 3 recent "
@@ -783,7 +784,7 @@ def external_imports_panel(sel):
     if not (ev and ev.selection.rows):
         return
     r = d.iloc[ev.selection.rows[0]]
-    fpath = store.DATA / "backtest" / RUN / "external" / "facets.parquet"
+    fpath = store.DATA / "external" / RUN / "facets.parquet"
     if fpath.exists():
         f = _external(RUN, "facets.parquet", fpath.stat().st_mtime)
         f = f[f.paper_id == r.paper_id].set_index("facet").text
@@ -793,7 +794,7 @@ def external_imports_panel(sel):
     st.caption(f"{r.venue or ''} · {int(r.year) if pd.notna(r.year) else ''} · {int(r.cited_by_count or 0)} citations "
                f"overall · {int(r.corpus_citers_total)} citing papers in the corpus · "
                f"[OpenAlex](https://openalex.org/{r.paper_id})")
-    epath = store.DATA / "backtest" / RUN / "external" / "edges.parquet"
+    epath = store.DATA / "external" / RUN / "edges.parquet"
     e = _external(RUN, "edges.parquet", epath.stat().st_mtime)
     riders = e[(e.cited_id == r.paper_id) & (e.citing_year >= int(r.as_of) - 2)].citing_id.unique().tolist()
     if riders:
@@ -1112,11 +1113,24 @@ def view_research_lab():
     render_lab(RUN, q, paper_card, record)
 
 
+def view_start_here():
+    from landscape.portfolio_view import render_start_here
+
+    render_start_here(RUN, q, paper_card, record)
+
+
+def view_my_paper():
+    from landscape.portfolio_view import render_my_paper
+
+    render_my_paper(RUN, q, paper_card, record)
+
+
 def view_experiments():
     from landscape.experiments_view import render_experiments
 
     render_experiments(RUN)
 
 
-{"Map & grid": view_map, "Research lab": view_research_lab, "Experiments": view_experiments,
+{"Start here": view_start_here, "My paper": view_my_paper, "Map & grid": view_map,
+ "Research lab": view_research_lab, "Experiments": view_experiments,
  "Corpus view": view_corpus, "Facet review": view_facets, "Cluster review": view_clusters}[view]()

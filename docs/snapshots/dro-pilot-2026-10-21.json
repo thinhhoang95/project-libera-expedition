@@ -1,8 +1,8 @@
 {
   "run": "dro-pilot",
   "snapshot_date": "2026-10-21",
-  "created_at": "2026-10-21T10:57:49",
-  "git_commit": "e9a9b42c6455f1f6aa47125649e815d03818ad9c",
+  "created_at": "2026-10-21T11:16:03",
+  "git_commit": "b2c03ea41cb9bbc525c8206d70d1c959f836ba1b",
   "corpus_papers": 5410,
   "latest_publication_year": 2026,
   "embedding_model": "google/embeddinggemma-2|task: sentence similarity | query:|d768",
@@ -107,6 +107,20 @@
       "baseline_of": "external_imports"
     },
     {
+      "list": "community_warmth",
+      "rows": 1221,
+      "what": "For each paper from the last two years: the 3 warmest communities among those not citing it yet (experiment 10 model)",
+      "hit": "a paper published after the snapshot, assigned to the community, cites the paper (per paper: did any of its 3 communities cite it)",
+      "baseline_of": null
+    },
+    {
+      "list": "community_warmth_baseline_size",
+      "rows": 1221,
+      "what": "Baseline: the 3 largest communities not citing the paper yet",
+      "hit": "as community_warmth",
+      "baseline_of": "community_warmth"
+    },
+    {
       "list": "rising_pockets",
       "rows": 31,
       "what": "Recent papers in the top 5% of local momentum",
@@ -151,12 +165,14 @@
     "bridge_paper_gem.parquet": "c113548a5d63c7c369e519e93e39770268403be45a0a629bfc93ffbc9c967be1",
     "bridge_paper_gem_baseline_random.parquet": "2f80803352ba48a54d8c8adc43dbb39755ec01e0bfce24e6e701c730e20d1d62",
     "cluster_centroids.parquet": "7e7c2663d6e3ac904b034ea223a706aca7cc37d74c830d18d4938f5ddf2d9ee2",
+    "community_warmth.parquet": "2852c084f05cb8950f2c704e77d9f3a1add2b67971635c4efa1239e0bd2e9ce5",
+    "community_warmth_baseline_size.parquet": "e427eb87f12e862b37b76a740e9caab2de8250c4ed1047c81eecc310a739fd43",
     "corpus_ids.parquet": "332a949d910c2cc2132425c12761c343eadd190aef94c91585ead9a0f89100e6",
     "early_work.parquet": "9352ba3a99c4f94d815a92adc2956f65e1e6c3544fc5b7e036d8d8278f711ecb",
     "early_work_baseline_citations.parquet": "21a953ae2b53b57ca445a3b33960c9ee12ece5597c94f3b239482b3842be5729",
     "early_work_cohort.parquet": "5d40f05a199c35505e594ac46ca32712969c1f643e4050980786e2582ffdcef6",
     "emerging_cluster.parquet": "b27989ca68faea422d8eacf4c5b9f4025dd3e900a0a8c6872dddea125185a81e",
-    "external_imports.parquet": "ef8b44bb878636facf378f2bcb0558c219f1412ddbec583c615edafdf8d423ec",
+    "external_imports.parquet": "45f793b2c5a5496848e1a726fdafbc9fe9fd90dbd7785962116ceb050962a20a",
     "external_imports_baseline_rate.parquet": "5d438a2dba03748904ca1d2d822d0c7f59236939d013b7ece09e68d05f690a42",
     "external_imports_outside.parquet": "6043bf62fca2308219877ea1edff234dc05c96eed122484c0bf2b19bfd008c11",
     "method_transfer.parquet": "a3fe4caf00bef427f0094b810767b7887941e7157423992cd49d3051f02ba26d",

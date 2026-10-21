@@ -15,10 +15,13 @@ Last updated 2026-10-21. Read this first, then `README.md` and `docs/features/`.
 | 6b Streamlit explorer (every signal as a layer; corpus, facet and cluster review) | prototype | `06b-explorer.md` |
 | 7 Integrity module | **not started** (out of scope so far) | — |
 | 8 Backtest on the existing corpus (cutoffs 2020–2023) | done | `08-backtest.md` |
-| 8b Signal-improvement experiments | done (explorer and docs too) | `08b-signal-experiments.md` |
+| 8b Signal-improvement experiments (exp1–10, prospective snapshot) | done | `08b-signal-experiments.md`, `findings-portfolio.md` |
+| 8c Research lab (sampling decomposition, alias-aware bridges, underconnected communities; Codex) | done | `08c-research-lab.md` |
+| 9 Product portfolio: Start here, My paper, `landscape external / portfolio / my-paper` | done | `09-portfolio.md` |
 
 The pilot run is `dro-pilot` (seed: Esfahani & Kuhn, Wasserstein DRO, DOI
-10.1007/s10107-017-1172-1): 5,410 papers, total spend about $0.65 so far. The user confirmed DRO
+10.1007/s10107-017-1172-1): 5,410 papers, total spend about $1.80 so far (about $1.10 of it the
+external-work facets). The user confirmed DRO
 as the pilot field.
 
 ## Decisions the user made (keep them)
@@ -66,7 +69,15 @@ them through `model_score()`.
 
 ### Next steps
 
-1. **Optionally fold the experiments into `landscape backtest`**, so they re-run with one
+1. **Score the prospective snapshot** (`docs/snapshots/dro-pilot-2026-10-21.json`) at 6, 12 and 24
+   months: collect papers published after 2026-10-21 with the same routes and apply its protocol.
+   Back up `data/snapshots/`, which is not in git.
+2. **An independent, year-balanced field sample** (downloads) before claiming trends or community
+   births; and a **blinded expert review** of the opportunity lists, the endpoint for "feasible,
+   non-obvious" (recipe target: 30% useful and non-obvious).
+3. **Coverage gaps:** Start here lists core works cited heavily but missing from the map; add them
+   (a second seed or an expansion) and rebuild.
+4. **Optionally fold the experiments into `landscape backtest`**, so they re-run with one
    command.
 2. **Deduplicate preprint/article twins.** About 2% of the corpus (101 title groups, 217
    records) is the same paper under several OpenAlex ids. This inflates coupling and local
@@ -138,6 +149,11 @@ No new metadata, embeddings, extraction or LLM calls were made.
    process per file: **close the explorer before running pipeline steps**.
 
 ## Machine-specific notes
+
+- **Pipeline order after a rebuild:** `signals` → `external` (once; about $1 of LLM) → `portfolio`.
+  `my-paper --doi` analyses any paper. The explorer opens on *Start here*.
+- **Experiment scripts** take `--run-id` and read `LANDSCAPE_DB=<copy of data/landscape.duckdb>`
+  when the explorer holds the lock.
 
 - **macOS with the repo on an exFAT drive** (`/Volumes/CrucialX`):
   - **No symlinks:** exFAT can't hold them, so the venv lives off the drive. Set

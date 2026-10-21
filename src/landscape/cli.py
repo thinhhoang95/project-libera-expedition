@@ -203,6 +203,36 @@ def cmd_research_lab(a, con):
     print(f"Review artifacts: {path}")
 
 
+def cmd_external(a, con):
+    from .external import run_external
+
+    stats = run_external(con, a.run_id, _params(con, a.run_id), stages=tuple(a.stages), min_cites=a.min_cites,
+                         llm_cap_usd=a.llm_cap)
+    _add_spend(con, a.run_id, "openalex_external", stats.get("fetch", {}).get("spend_usd", 0.0))
+    _add_spend(con, a.run_id, "llm_external_facets", stats.get("extract", {}).get("spend_usd", 0.0))
+    print(json.dumps(stats, indent=2, default=str))
+
+
+def cmd_portfolio(a, con):
+    from .portfolio import build_portfolio
+
+    print(json.dumps(build_portfolio(con, a.run_id, _params(con, a.run_id)), indent=2, default=str))
+
+
+def cmd_my_paper(a, con):
+    from .portfolio import analyse_doi
+
+    path = analyse_doi(con, a.run_id, _params(con, a.run_id), a.doi)
+    rec = json.loads(path.read_text())
+    _add_spend(con, a.run_id, "llm_my_paper", rec.get("llm_cost_usd", 0.0))
+    warm = sorted((w for w in rec["warmth"] if w.get("rank") == w.get("rank") and w.get("rank")), key=lambda w: w["rank"])
+    print(f"{rec['title']} ({rec['year']}) -> {path}")
+    labels = dict(con.execute("SELECT cluster_id, label FROM clusters WHERE run_id = ?", [a.run_id]).fetchall())
+    for w in warm[:5]:
+        print(f"  {int(w['rank'])}. {labels.get(w['cluster_id'], w['cluster_id'])}  (warmth {w['warmth']:.2f})")
+    print("Open it in the explorer: My paper.")
+
+
 def cmd_status(a, con):
     q = lambda sql: con.execute(sql, [a.run_id]).df().to_string(index=False)  # noqa: E731
     print(q("SELECT run_id, seed_ids, spend_usd, model_versions FROM runs WHERE run_id = ?"))
@@ -231,7 +261,8 @@ def main(argv=None):
     s.set_defaults(fn=cmd_new_run)
 
     for name, fn in [("expand", cmd_expand), ("preprints", cmd_preprints), ("semantic", cmd_semantic), ("extract", cmd_extract),
-                     ("qa", cmd_qa), ("embed", cmd_embed), ("core", cmd_core), ("viz", cmd_viz), ("signals", cmd_signals), ("backtest", cmd_backtest), ("research-lab", cmd_research_lab), ("status", cmd_status)]:
+                     ("qa", cmd_qa), ("embed", cmd_embed), ("core", cmd_core), ("viz", cmd_viz), ("signals", cmd_signals), ("backtest", cmd_backtest), ("research-lab", cmd_research_lab), ("external", cmd_external),
+                     ("portfolio", cmd_portfolio), ("my-paper", cmd_my_paper), ("status", cmd_status)]:
         s = sub.add_parser(name)
         s.add_argument("--run-id", required=True)
         if name == "extract":
@@ -251,6 +282,13 @@ def main(argv=None):
                            help="refresh the two paper-bridge lists without recomputing other signals or calling the judge")
         if name == "core":
             s.add_argument("--skip-labels", action="store_true")
+        if name == "external":
+            s.add_argument("--stages", nargs="+", default=["fetch", "extract", "embed"],
+                           choices=["fetch", "extract", "embed"])
+            s.add_argument("--min-cites", type=int, default=5, help="fetch external works cited by at least this many corpus papers")
+            s.add_argument("--llm-cap", type=float, default=2.0, help="USD cap for external facet extraction")
+        if name == "my-paper":
+            s.add_argument("--doi", required=True)
         s.set_defaults(fn=fn)
 
     s = sub.add_parser("explorer", help="open the Streamlit explorer (close it before running pipeline steps)")

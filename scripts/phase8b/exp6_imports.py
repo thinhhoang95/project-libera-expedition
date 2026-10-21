@@ -1,7 +1,8 @@
 """Experiment 6: ideas borrowed from outside the field. Which external works does the field import
 more and more, and does it pay to borrow from external trends?
 
-Needs scripts/phase8b/external_mine.py (fetch + embed; facets optional) for the run.
+Needs `landscape external --run-id <run>` (fetch + extract + embed) for the run; the production version of
+the live list is built by `landscape portfolio` (src/landscape/portfolio.py).
 
 A. Import map (descriptive): the subfields of the external works corpus papers cite, by citing year.
 B. Lead indicator (predictive, leave-one-cutoff-out). Candidates at cutoff T are external works with
@@ -30,12 +31,12 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import StandardScaler
 
-from landscape import embed, experiments
+from landscape import embed, experiments, external
 from landscape.cli import _params
 
 RUN = experiments.run_arg()
 WORK = experiments.work_dir(RUN)
-EXT = WORK / "external"
+EXT = external.ext_dir(RUN)
 CUTOFFS = (2020, 2021, 2022, 2023)
 con = experiments.connect_ro()
 p = _params(con, RUN)
@@ -331,7 +332,7 @@ L = L.merge(works[["paper_id", "title", "year", "subfield", "field", "venue", "c
 L = L.drop(columns="_nearest_recent").sort_values("score", ascending=False)
 L.attrs = {}
 L.assign(as_of=T_LIVE, model="exp6 all families, fitted on cutoffs " + ",".join(map(str, CUTOFFS))).to_parquet(
-    EXT / "live_imports.parquet", index=False)
+    WORK / "exp6_live_imports.parquet", index=False)
 print(f"live list as of {T_LIVE}: {len(L)} external works; top 10:")
 print(L.head(10)[["title", "subfield", "g_trend", "fit_now", "recent_citers", "cluster_label"]].to_string(index=False))
 print("outside the field (semantic):")
