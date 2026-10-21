@@ -105,7 +105,24 @@ definition). The pilot's decisions are listed for reference only, because result
 corpus. Code: `src/landscape/experiments_view.py`; data: `data/backtest/<run>/experiments/`.
 
 The Phase 8b panels in Map & grid (Papers to bring in, Early work, Rising pockets) each have a
-"How to read this" note.
+"How to read this" note. The Experiments view opens with the findings portfolio, rendered from
+`docs/features/findings-portfolio.md`.
+
+### Bridges › From outside the field (Phase 8b, exp6)
+
+External works the field is citing more and more, as of the latest complete year, scored by
+the experiment-6 model. Scopes:
+- *Outside the field*: the third whose abstracts are farthest from the corpus.
+- *In-field, missing from the corpus*: core papers the corpus never fetched.
+- *All.*
+
+A toggle keeps works from the last 10 years. Selecting a work shows its problem, innovation
+and limitation facets, the corpus papers citing it in the last three years, and the closest
+corpus paper's card. Review actions go to `review_actions` (`signal_type = external_import`).
+Data: `data/backtest/<run>/external/live_imports.parquet`.
+
+**Status badges** are off by default and carry a warning: direction labels depend on how the
+corpus was sampled.
 
 ### Corpus view (Phase 2)
 

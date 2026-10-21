@@ -29,7 +29,11 @@ uv run python scripts/phase8b/fit_models.py           # refits the two productio
 uv run python scripts/phase8b/fetch_counts_by_year.py # exp5 only: OpenAlex yearly counts (~$0.02, cached)
 uv run python scripts/phase8b/exp5_features.py        # writes data/backtest/exp5_papers.parquet
 uv run python scripts/phase8b/exp5_evaluate.py [logit|hgb] [y_...]
+uv run python scripts/phase8b/external_mine.py [fetch] [extract] [embed]   # exp6 data (~$1.10 LLM)
+uv run python scripts/phase8b/exp6_imports.py         # before exp5_features.py, for the borrowing family
 ```
+
+`LANDSCAPE_DB=<copy of data/landscape.duckdb>` lets the scripts run while the explorer holds the lock.
 
 The production models are fitted on all four cutoffs. The honest accuracy estimates are the
 leave-one-cutoff-out numbers below, not the in-sample fit.
@@ -44,6 +48,7 @@ leave-one-cutoff-out numbers below, not the in-sample fit.
 | 3b. Local momentum pockets | ρ +0.13, AUC 0.58, p@50 0.17 vs 0.084 random | **adopted lightly**: `paper_scores` metric `local_momentum`, explorer layer *Rising pockets* |
 | 4. Method transfer as matrix completion | cluster level, item CF AUC 0.70 (≥ 1 paper) / 0.80 (≥ 2) vs recipe 0.67 / 0.66, popularity 0.51 / 0.62 | **adopted**: `SignalParams.transfer_method = "item_cf"` |
 | 5. Topic, question, credibility and imports beyond rich-get-richer | in-field, peer-normalized, no self-citations: rising imports +0.022 AUC, venue +0.017, author +0.012, topic/question +0.007 (not significant); global field-normalized: only global author credibility, +0.012 (forward route) | findings; not adopted yet |
+| 6. Ideas borrowed from outside the field | imports: semantic fit to where the field's questions are moving +0.020 AUC, global trend +0.013 (strict hit, work-level bootstrap). Papers: borrowing what trends globally, from nearby, +0.016 in-field; nothing globally | **adopted as a review list**: Bridges › From outside the field |
 
 ## 1. Paper-level bridges
 
@@ -275,6 +280,91 @@ current imports. The import signal above uses only the external *ids* in `refs`.
 is to fetch and embed those works, to see which fields DRO imports from and whether an
 external trend that matches DRO's problems predicts its import.
 
+## 6. Ideas borrowed from outside the field
+
+**Question.** Ideas often come from neighbouring fields and from what is trending there. Do
+the field's imports follow external trends and its own changing questions, and does it pay a
+paper to borrow from them?
+
+**Data** (`external_mine.py`, about $1.10 in LLM extraction and $0.01 in OpenAlex calls):
+- 80–94% of each year's references point outside the corpus: 252,053 citations to 148,992
+  external works.
+- The 6,624 works cited by at least 5 corpus papers were fetched (6,523 still served), with
+  abstracts, subfields and yearly global citations. They cover about a quarter of external
+  citations; about 75% of each year's external citations go to works cited fewer times.
+- 4,094 works with an abstract got the corpus facet prompt (problem, method, innovation, …).
+  All 6,523 were embedded with the corpus model.
+- Everything stays in `data/backtest/<run>/external/`, apart from the corpus tables.
+
+### A. Import map
+
+Among the fetched works, the share of external citations by subfield, 2017–19 vs 2023–25:
+- **Rising:** Management Science and Operations Research, 16% → 22%; Artificial Intelligence,
+  12% → 14%.
+- **Falling:** Statistics and Probability, 30% → 7%; Electrical and Electronic Engineering,
+  18% → 11%.
+- **Caveat:** recent external works have had less time to reach 5 corpus citers, so the newest
+  imports are under-represented.
+
+### B. What predicts more borrowing (lead indicator)
+
+- **Candidates at T:** external works already cited by at least 5 corpus papers *by T*. The
+  fetched set means "cited ≥ 5 times ever", which would select on the outcome; this rule
+  keeps the selection to data up to T.
+- **Strict hit:** the share of corpus papers citing the work in T+1…T+3, relative to T−2…T, is
+  in the top quarter for T, *and* at least 3 corpus papers cite it after T. A ratio from a
+  near-zero rate is mostly noise and mean reversion.
+- **Data:** 17,348 candidate-cutoff rows, strict base rate 0.14.
+- **Bootstrap:** the 90% interval resamples whole works, because a work appears at several
+  cutoffs.
+
+| Model (strict hit) | AUC | Gain over base | 90% CI | p@50 |
+| --- | --- | --- | --- | --- |
+| base (in-field rate and momentum, global citations by T, age) | 0.685 | — | — | 0.350 |
+| + external trend (global citation momentum at T) | 0.698 | +0.013 | [+0.009, +0.017] | 0.335 |
+| + semantic fit (to the problems posed now, shift since T−4…T−2, limitation match) | 0.705 | **+0.020** | [+0.015, +0.027] | 0.355 |
+| + externality (subfield rare in the corpus) | 0.685 | 0.000 | n.s. | 0.345 |
+| all | 0.710 | **+0.025** | [+0.019, +0.031] | 0.345 |
+
+- **Best single feature:** `fit_shift` (AUC 0.65 alone). The field imports more of what sits
+  where its questions are *moving*.
+- **Second:** the work's global trend (0.62). External trending ideas do get pulled in more.
+- **Not predictive:** how foreign the subfield is.
+- **Where the gain shows:** overall ordering, not a sharper top of the list (p@50 unchanged).
+  With the ratio-only hit the gain is +0.032, but that definition is noisier.
+
+### C. Does it pay a paper to borrow? (exp5 "borrowing" family)
+
+For each corpus paper, the external works it cites that were already imported by its year
+(≥ 5 corpus citers then) are described by:
+- their global trend at the time;
+- their semantic distance from the paper;
+- how foreign their subfields are.
+
+| Outcome | All papers | Forward route | Cold start |
+| --- | --- | --- | --- |
+| In-field, peer-normalized, no self-cites | **+0.016** [+0.006, +0.024] | **+0.014** [+0.005, +0.024] | **+0.018** [+0.002, +0.035] |
+| Global, field-normalized | −0.003 | −0.002 | −0.004 |
+
+- **What helps:** citing a work that is trending globally (`b_trend_max`, within-decile AUC
+  0.57–0.59).
+- **What hurts:** borrowing from semantically far away (0.43) or from foreign subfields (0.47).
+- **In short:** *borrow what is trending, from nearby.* This agrees with the import result in
+  section 5 (ride the wave, don't be the first importer). Like every other family, it does
+  not explain global success.
+
+### D. Live list (explorer: Bridges › From outside the field)
+
+- **What it is:** the strict model fitted on all cutoffs scores the external works with at
+  least 3 corpus citers in 2023–25 (1,538 works, as of 2025).
+- **Outside the field:** the third of the list whose *abstracts* are farthest from the corpus.
+  OpenAlex subfields mislabel many in-field works, and title-only records are excluded.
+- **Current examples:** causal and adapted optimal transport, elicitable risk measures,
+  high-dimensional probability, multi-marginal optimal transport, robust Kalman filtering.
+- **Coverage gap:** the rest of the list is often *core papers of this field that the corpus
+  never fetched*, such as "Data-driven robust optimization" and "Tight bounds for some risk
+  measures". That is a coverage gap, and a direct input for corpus expansion.
+
 ## Explorer
 
 See [06b-explorer.md](06b-explorer.md):
@@ -293,5 +383,6 @@ See [06b-explorer.md](06b-explorer.md):
 - **An off-field audit of the corpus**, and deduplication of preprint/article twins.
 - **Adopting exp5 features in `early_work`.** Against raw corpus citations (its target), all
   families together add +0.042 AUC (90% CI +0.030 to +0.055).
-- **Metadata and embeddings for external imports** (see section 5).
+- **External works cited fewer than 5 times** (about 75% of external citations) are not fetched
+  yet; the newest imports are under-represented.
 - **Folding these experiments into `landscape backtest`**, so they re-run with one command.

@@ -7,10 +7,14 @@ re-run it on another run (see src/landscape/experiments.py).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
 
 from . import experiments
+
+PORTFOLIO_DOC = Path(__file__).resolve().parents[2] / "docs" / "features" / "findings-portfolio.md"
 
 # what was decided on the pilot; another run should be judged on its own tables
 PILOT_DECISIONS = {
@@ -19,6 +23,7 @@ PILOT_DECISIONS = {
     "exp3_micro_topics": "burstiness dropped; local momentum adopted lightly (map layer Rising pockets)",
     "exp4_method_transfer": "adopted: item CF for bridge_method_transfer (grid diamonds)",
     "exp5_beyond_rich_get_richer": "findings only; not used by any signal yet",
+    "exp6_imports": "adopted as a review list (Bridges tab, From outside the field)",
 }
 ORDER = list(PILOT_DECISIONS)
 SCRIPTS = {
@@ -26,7 +31,9 @@ SCRIPTS = {
     "exp2_early_work": ["exp2_early_work.py"],
     "exp3_micro_topics": ["exp3_micro_topics.py"],
     "exp4_method_transfer": ["exp4_method_transfer.py"],
-    "exp5_beyond_rich_get_richer": ["fetch_counts_by_year.py", "exp5_features.py", "exp5_evaluate.py [logit] [hgb]"],
+    "exp5_beyond_rich_get_richer": ["fetch_counts_by_year.py", "exp6_imports.py", "exp5_features.py",
+                                    "exp5_evaluate.py [logit] [hgb]"],
+    "exp6_imports": ["external_mine.py fetch extract embed", "exp6_imports.py"],
 }
 
 
@@ -54,6 +61,41 @@ def _filters(df: pd.DataFrame, cols: list[str], key: str) -> pd.DataFrame:
     return df.drop(columns=cols)
 
 
+def _doc_sections(path: Path) -> dict[str, str]:
+    """Level-2 sections of a markdown doc, by heading."""
+    if not path.exists():
+        return {}
+    out, head = {}, None
+    for line in path.read_text().splitlines():
+        if line.startswith("## "):
+            head = line[3:].strip()
+            out[head] = []
+        elif head:
+            out[head].append(line)
+    return {h: "\n".join(v).strip() for h, v in out.items()}
+
+
+def render_portfolio() -> None:
+    """The findings portfolio (docs/features/findings-portfolio.md): one source for doc and UI."""
+    sec = _doc_sections(PORTFOLIO_DOC)
+    if not sec:
+        return
+    st.subheader("Findings portfolio (pilot)")
+    st.caption("Every experiment so far, its verdict and where it lives in the product. Measured on dro-pilot "
+               "only; the tables below hold the evidence for the selected run.")
+    if "The portfolio" in sec:
+        st.markdown(sec["The portfolio"])
+    with st.expander("Verdicts and protocols"):
+        st.markdown(sec.get("Verdicts", "") + "\n\n" + sec.get("Protocols, for reading the numbers", ""))
+    with st.expander("What the evidence says about how attention works, and what it means for the product"):
+        st.markdown(sec.get("What the evidence says about how attention works (pilot)", "") + "\n\n**Implications**\n\n"
+                    + sec.get("Implications for the product", ""))
+    if sec.get("Borrowed ideas (exp6)") and not sec["Borrowed ideas (exp6)"].startswith("_Filled"):
+        with st.expander("Borrowed ideas (exp6)"):
+            st.markdown(sec["Borrowed ideas (exp6)"])
+    st.divider()
+
+
 def render_experiments(run: str) -> None:
     st.title("Experiments")
     st.caption(f"Run **{run}** · every result table the signal experiments saved for this corpus, "
@@ -71,6 +113,8 @@ def render_experiments(run: str) -> None:
             "where it beats them.\n\n"
             "Results depend on the corpus: how it was sampled, the field and its size. A signal that lost here may "
             "win elsewhere, so all tables stay visible. The pilot's decisions are listed for reference only.")
+    render_portfolio()
+    st.subheader(f"Result tables for {run}")
     idx = experiments.load_index(run)
     backtest = experiments.BACKTEST / f"{run}_summary.csv"
     if not idx and not backtest.exists():

@@ -18,9 +18,10 @@ from landscape import experiments
 
 RUN = experiments.run_arg()
 df = pd.read_parquet(experiments.work_dir(RUN) / "exp5_papers.parquet")
-for c in ("cites_so_far", "coupling", "n_refs", "n_authors", "q_breadth", "a_n_prior", "v_n_prior", "x_n_rising", "x_n_fresh",
+for c in ("cites_so_far", "coupling", "n_refs", "n_authors", "q_breadth", "a_n_prior", "v_n_prior", "x_n_rising", "x_n_fresh", "b_n_trending",
           "g_cites_so_far", "ga_c_cum", "ga_c_rec", "ga_w_cum", "ga_rate"):
-    df["l_" + c] = np.log1p(df[c].astype(float))
+    if c in df.columns:
+        df["l_" + c] = np.log1p(df[c].astype(float))
 for r in ("semantic", "author", "back"):
     df["route_" + r] = (df.route == r).astype(float)
 df["a_has_history"] = (df.a_n_with_history > 0).astype(float)
@@ -35,7 +36,10 @@ FAM = {
     "venue": ["v_prestige", "v_gprestige", "l_v_n_prior"],
     "author_global": ["l_ga_c_cum", "l_ga_c_rec", "l_ga_w_cum", "l_ga_rate", "ga_team"],
     "imports": ["x_ext_share", "x_rising_max", "l_x_n_rising", "l_x_n_fresh"],
+    "borrowing": ["b_trend_max", "b_trend_mean", "l_b_n_trending", "b_distance", "b_externality", "b_n_subfields"],
 }
+FAM = {k: [f for f in v if f in df.columns or f.removeprefix("l_") in df.columns] for k, v in FAM.items()}
+FAM = {k: v for k, v in FAM.items() if v}
 for f in sum(FAM.values(), []):
     if f not in ("a_track", "a_expert", "a_cred_expert"):
         df[f] = df[f].astype(float).fillna(df[f].astype(float).median())
@@ -50,6 +54,7 @@ MODELS = {
     "base + venue": FAM["base"] + FAM["venue"],
     "base + imports": FAM["base"] + FAM["imports"],
     "base + author_global": FAM["base"] + FAM["author_global"],
+    **({"base + borrowing": FAM["base"] + FAM["borrowing"]} if "borrowing" in FAM else {}),
     "base + topic + question": FAM["base"] + FAM["topic"] + FAM["question"],
     "all": sum(FAM.values(), []),
     "semantic only (topic + question)": FAM["topic"] + FAM["question"],

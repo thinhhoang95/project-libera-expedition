@@ -31,7 +31,7 @@ from landscape.cli import _params
 BASE = experiments.run_arg()
 CUTOFFS = (2020, 2021, 2022, 2023)
 K = 20
-con = store.connect(read_only=True)
+con = experiments.connect_ro()
 p = _params(con, BASE)
 VER, DIM = p.embedding.version, p.embedding.graph_dim
 
@@ -282,6 +282,9 @@ for T in CUTOFFS:
     print(T, len(F), flush=True)
 
 df = pd.concat(rows, ignore_index=True)
+# borrowing style (exp6_imports.py part C): global trend and distance of the external works cited
+if (WORK / "exp6_paper_borrowing.parquet").exists():
+    df = df.merge(pd.read_parquet(WORK / "exp6_paper_borrowing.parquet"), on="paper_id", how="left")
 # field-normalized global outcomes: global counts mostly measure field citation norms (an ML paper
 # out-cites an OR-theory paper of equal standing), so compare each paper with like papers only
 sub = con.execute("""SELECT paper_id, json_extract_string(topics, '$[0].subfield') sf,

@@ -12,7 +12,7 @@ from landscape.backtest import Assigner
 from landscape.cli import _params
 
 BASE, ALPHA = experiments.run_arg(), 0.5
-con = store.connect(read_only=True)
+con = experiments.connect_ro()
 p = _params(con, BASE)
 ver = p.embedding.version
 papers = con.execute("""SELECT v.paper_id, p.year, coalesce(p.cited_by_count, 0) cbc FROM provenance v

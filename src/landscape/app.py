@@ -154,7 +154,11 @@ def view_map():
         show_density = st.checkbox("Activity shift", False)
         compare = st.checkbox("Compare with previous window", False, disabled=not show_density)
         nosig = dict(disabled=not have_signals, help=None if have_signals else "run `landscape signals`")
-        show_badges = st.checkbox("Status badges", have_signals, **nosig)
+        # off by default: direction labels depend on the sampling mix (08-backtest, 08c: 6 of 15
+        # topics reverse direction once route-mix changes are separated out)
+        show_badges = st.checkbox("Status badges", False, **{**nosig, "help": nosig["help"] or
+                                  "Direction labels (emerging / niche / dormant). Weak in the backtest and "
+                                  "sensitive to how the corpus was sampled: read as prompts, not trends."})
         show_flows = st.checkbox("Citation flows", False, **nosig)
         show_mig = st.checkbox("Author migration", False, **nosig)
         show_novel = st.checkbox("Novel papers", False, **nosig)
@@ -410,7 +414,10 @@ def view_map():
                 st.session_state.sel_cluster = hit.iloc[0]
         if show_badges:
             st.caption(f"Status at {t2}: ▲ emerging · ◆ niche · ○ dormant · ◇ hub (unstable boundary, "
-                       f"reported separately). Statuses exist for cutoff years with enough data.")
+                       f"reported separately). Statuses exist for cutoff years with enough data. **Read with "
+                       f"care:** in the backtest, emerging was barely better than chance, and several topics "
+                       f"reverse direction once changes in the sampling mix are separated out. Treat a badge as "
+                       f"a prompt to look, not as a trend.")
 
     # ---- grid + detail
     with right:
@@ -515,7 +522,9 @@ def view_map():
                 if ev and ev.selection.rows:
                     st.session_state.sel_cluster = part.iloc[ev.selection.rows[0]].cluster_id
                     st.rerun()
-            st.caption(f"Δ share compares {t1}–{t2} with the {prev_len} years before it. Scores are as of {t2}.")
+            st.caption(f"Δ share compares {t1}–{t2} with the {prev_len} years before it. Scores are as of {t2}. "
+                       "Shares and statuses describe this corpus as sampled; direction claims need a stable "
+                       "yearly sample (see the Experiments view).")
         with tab_detail:
             options = [None] + clusters.sort_values("size", ascending=False).cluster_id.tolist()
             pick = st.selectbox("Cluster", options, index=options.index(sel) if sel in options else 0,
@@ -551,11 +560,14 @@ def view_map():
                 st.divider()
                 paper_card(st.session_state.sel_paper)
         with tab_bridges:
-            mode = st.radio("Show", ["Cluster pairs", "Papers to bring in"], horizontal=True, key="br_mode")
+            mode = st.radio("Show", ["Cluster pairs", "Papers to bring in", "From outside the field"],
+                            horizontal=True, key="br_mode")
             if mode == "Cluster pairs":
                 bridges_panel()
-            else:
+            elif mode == "Papers to bring in":
                 paper_bridges_panel(sel)
+            else:
+                external_imports_panel(sel)
         with tab_people:
             people_panel()
 
@@ -712,6 +724,90 @@ def paper_bridges_panel(sel):
         if col.button(act, key=f"pb_{act}_{pick}_{s['paper_id']}"):
             record("bridges", {"signal_type": chosen.signal_type, "subject": s, "rank": int(chosen["rank"])},
                    act, note, alpha={"problem": 0.5})
+            st.success("Saved to review_actions.")
+
+
+@st.cache_data(show_spinner=False)
+def _external(run: str, name: str, mtime: float) -> pd.DataFrame:
+    return pd.read_parquet(store.DATA / "backtest" / run / "external" / name)
+
+
+def external_imports_panel(sel):
+    path = store.DATA / "backtest" / RUN / "external" / "live_imports.parquet"
+    if not path.exists():
+        st.info("No external-import list for this run. Run `scripts/phase8b/external_mine.py` and "
+                "`scripts/phase8b/exp6_imports.py` (see the 08b doc).")
+        return
+    L = _external(RUN, "live_imports.parquet", path.stat().st_mtime)
+    how_to_read(
+        f"Works **outside the corpus** that corpus papers cite, as of {int(L.as_of.iloc[0])}, ranked by how likely "
+        "the field is to cite them more and more over the next three years. Only works with at least 3 recent "
+        "citing papers in the corpus are listed.\n\n"
+        "- **What drives the ranking** (experiment 6): the work's fit with the problems the field is moving "
+        "*towards*, and its citation momentum across all of science (**global trend**, the ratio of this year's "
+        "citations to the average of the two before). Both add to the in-field citation rate, modestly: about "
+        "+0.025 AUC, with no sharper top of the list.\n"
+        "- **Outside the field** keeps the third of the list whose abstracts are farthest from the corpus: ideas "
+        "genuinely borrowed from elsewhere (subfield labels are too noisy for this). **In-field, missing from the "
+        "corpus** shows the rest: often core papers of this field that the corpus never fetched, a coverage gap "
+        "rather than a borrowing.\n"
+        "- **Select a row** for the work's innovation, the closest paper in the corpus, and the corpus papers now "
+        "citing it. Papers that ride an incoming wave out-draw their peers (exp5); being the first to import does "
+        "not pay as well in-field.")
+    c1, c2 = st.columns([3, 2])
+    scope = c1.radio("Scope", ["Outside the field", "In-field, missing from the corpus", "All"], horizontal=True,
+                     key="ext_scope")
+    recent = c1.checkbox("Recent works only (last 10 years)", True, key="ext_recent",
+                         help="Off also lists the classics the field keeps citing: foundations rather than trends.")
+    d = L[L.year >= int(L.as_of.iloc[0]) - 10] if recent else L
+    if scope == "Outside the field":
+        d = d[d.outside_field]
+    elif scope.startswith("In-field"):
+        d = d[~d.outside_field]
+    clusters = d.dropna(subset=["cluster_id"]).drop_duplicates("cluster_id").set_index("cluster_id").cluster_label
+    opts = [None] + clusters.index.tolist()
+    pick = c2.selectbox("Closest problem cluster", opts, index=opts.index(sel) if sel in opts else 0,
+                        format_func=lambda c: "all" if c is None else clusters.get(c, c), key="ext_cluster")
+    if pick:
+        d = d[d.cluster_id == pick]
+    d = d.head(40)
+    tab = pd.DataFrame({"work": d.title, "year": d.year, "subfield": d.subfield,
+                        "global trend": np.exp(d.g_trend).round(2), "citers here, last 3 yrs": d.recent_citers,
+                        "closest problem cluster": d.cluster_label, "score": d.score.round(2)})
+    ev = st.dataframe(tab, hide_index=True, width="stretch", on_select="rerun", selection_mode="single-row",
+                      key=f"ext_{scope}_{pick}")
+    st.caption(f"{len(d)} shown. Global trend 1.5 means 50% more citations this year than the average of the two "
+               "before, across all of science.")
+    if not (ev and ev.selection.rows):
+        return
+    r = d.iloc[ev.selection.rows[0]]
+    fpath = store.DATA / "backtest" / RUN / "external" / "facets.parquet"
+    if fpath.exists():
+        f = _external(RUN, "facets.parquet", fpath.stat().st_mtime)
+        f = f[f.paper_id == r.paper_id].set_index("facet").text
+        for k in ("problem", "innovation", "limitations"):
+            if isinstance(f.get(k), str):
+                st.markdown(f"**{k.capitalize()}** ({r.title}): {f[k]}")
+    st.caption(f"{r.venue or ''} · {int(r.year) if pd.notna(r.year) else ''} · {int(r.cited_by_count or 0)} citations "
+               f"overall · {int(r.corpus_citers_total)} citing papers in the corpus · "
+               f"[OpenAlex](https://openalex.org/{r.paper_id})")
+    epath = store.DATA / "backtest" / RUN / "external" / "edges.parquet"
+    e = _external(RUN, "edges.parquet", epath.stat().st_mtime)
+    riders = e[(e.cited_id == r.paper_id) & (e.citing_year >= int(r.as_of) - 2)].citing_id.unique().tolist()
+    if riders:
+        t = q(f"""SELECT paper_id, year, title FROM papers WHERE paper_id IN ({",".join("?" * len(riders))})
+                  ORDER BY year DESC""", tuple(riders))
+        st.markdown(f"**Corpus papers citing it since {int(r.as_of) - 2}** ({len(t)})")
+        st.dataframe(t[["year", "title"]], hide_index=True, width="stretch", height=180)
+    if isinstance(r.closest_corpus_paper, str):
+        st.markdown("**Closest paper in the corpus** (its problem statement is nearest to this work)")
+        paper_card(r.closest_corpus_paper)
+    note = st.text_input("Note", key=f"extnote_{r.paper_id}")
+    c = st.columns(3)
+    for col, act in zip(c, ["worth pursuing", "obvious", "wrong"]):
+        if col.button(act, key=f"ext_{act}_{r.paper_id}"):
+            record("bridges", {"signal_type": "external_import", "paper_id": r.paper_id, "title": r.title,
+                               "cluster_id": r.cluster_id}, act, note)
             st.success("Saved to review_actions.")
 
 

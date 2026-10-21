@@ -18,7 +18,7 @@ from landscape import experiments, store
 from landscape.cli import _params
 
 BASE = experiments.run_arg()
-con = store.connect(read_only=True)
+con = experiments.connect_ro()
 p = _params(con, BASE)
 papers = con.execute("""SELECT v.paper_id, v.route, p.year FROM provenance v JOIN papers p USING (paper_id)
                         WHERE v.run_id = ?""", [BASE]).df()

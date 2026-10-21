@@ -26,6 +26,16 @@ def run_arg(default: str = "dro-pilot") -> str:
     return ap.parse_known_args()[0].run_id
 
 
+def connect_ro():
+    """Read-only database connection for the experiment scripts. LANDSCAPE_DB may point at a copy
+    of the database file, e.g. while the explorer holds the lock on the original."""
+    import os
+
+    import duckdb
+
+    return duckdb.connect(os.environ.get("LANDSCAPE_DB", str(store.DB_PATH)), read_only=True)
+
+
 def work_dir(run: str) -> Path:
     """Intermediate files of the experiments (per-pair and per-paper tables)."""
     d = BACKTEST / run
