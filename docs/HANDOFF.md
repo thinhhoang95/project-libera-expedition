@@ -18,7 +18,7 @@ Last updated 2026-10-21. Read this first, then `README.md` and `docs/features/`.
 | 8b Signal-improvement experiments (exp1–10, prospective snapshot) | done | `08b-signal-experiments.md`, `findings-portfolio.md` |
 | 8c Research lab (sampling decomposition, alias-aware bridges, underconnected communities; Codex) | done | `08c-research-lab.md` |
 | 9 Product portfolio: Start here, My paper, `landscape external / portfolio / my-paper` | done | `09-portfolio.md` |
-| 10 Orientation experiments (entry strategies, reading paths, durable ideas) | experiments done; product not built | `10-orientation-experiments.md` |
+| 10 Orientation experiments (entry strategies, reading paths, durable ideas) | done; artefacts built by `orientation.py`, rendered by the web app | `10-orientation-experiments.md` |
 
 The pilot run is `dro-pilot` (seed: Esfahani & Kuhn, Wasserstein DRO, DOI
 10.1007/s10107-017-1172-1): 5,410 papers, total spend about $1.80 so far (about $1.10 of it the
@@ -73,7 +73,7 @@ them through `model_score()`.
 1. **Score the prospective snapshot** (`docs/snapshots/dro-pilot-2026-10-21.json`) at 6, 12 and 24
    months: collect papers published after 2026-10-21 with the same routes, then
    `landscape score-snapshot --run-id dro-pilot --date 2026-10-21 --months 6` (and 12, 24).
-   Back up `data/snapshots/`, which is not in git.
+   Back up `data/projects/<run>/snapshots/`, which is not in git.
 2. **An independent, year-balanced field sample** (downloads) before claiming trends or community
    births; and a **blinded expert review** of the opportunity lists, the endpoint for "feasible,
    non-obvious" (recipe target: 30% useful and non-obvious).
@@ -111,7 +111,7 @@ No new metadata, embeddings, extraction or LLM calls were made.
 - New explorer **Research lab** view: sampling trajectories, alias-aware paper lists,
   38 underconnected community pairs, topic-specific people and evaluation protocols.
 - CLI: `landscape research-lab --run-id dro-pilot`; writes offline artifacts under
-  `data/research_lab/dro-pilot/`, opens DB read-only. Cutoff preparation and
+  `data/projects/dro-pilot/research_lab/`, opens DB read-only. Cutoff preparation and
   `landscape signals --run-id dro-pilot --paper-bridges-only` write derived tables.
 - Full-pipeline deduplication is still outstanding. The original rising pockets, coupling,
   clusters and novelty can still be affected by duplicated records.
@@ -126,10 +126,10 @@ No new metadata, embeddings, extraction or LLM calls were made.
 3. **Environment:** `uv sync` (Python 3.12, CPU torch). The first embedding run downloads
    EmbeddingGemma 2 (about 1.5 GB) from Hugging Face.
 4. **Data:** `data/` is **not in git** (about 2 GB). It holds the DuckDB file
-   `data/landscape.duckdb`, the raw API cache `data/raw/`, vectors in `data/vectors/`, and backtest
-   outputs in `data/backtest/`.
+   `data/shared/landscape.duckdb`, the raw API cache `data/shared/raw/`, vectors in `data/shared/vectors/`, and backtest
+   outputs in `data/projects/<run>/backtest/`.
    - **Best option:** copy the whole `data/` folder. Everything resumes as is.
-   - **Otherwise, rebuild.** The raw cache makes this cheap if `data/raw/` is copied; without it,
+   - **Otherwise, rebuild.** The raw cache makes this cheap if `data/shared/raw/` is copied; without it,
      it re-fetches (OpenAlex about $0.02, extraction about $0.27, labels about $0.08, judge about
      $0.06). Embedding takes about 30 minutes on CPU:
      ```
@@ -154,7 +154,7 @@ No new metadata, embeddings, extraction or LLM calls were made.
 
 - **Pipeline order after a rebuild:** `signals` → `external` (once; about $1 of LLM) → `portfolio`.
   `my-paper --doi` analyses any paper. The explorer opens on *Start here*.
-- **Experiment scripts** take `--run-id` and read `LANDSCAPE_DB=<copy of data/landscape.duckdb>`
+- **Experiment scripts** take `--run-id` and read `LANDSCAPE_DB=<copy of data/shared/landscape.duckdb>`
   when the explorer holds the lock.
 
 - **macOS with the repo on an exFAT drive** (`/Volumes/CrucialX`):

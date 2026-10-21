@@ -147,17 +147,29 @@ among equally generic ideas (genericness quintiles):
 - Use is measured by closeness of wording within the map.
 - Five to seven years is still short for the slow-burning ideas the novelty finding may be missing.
 
-## What could go into the product (not built yet)
+## In the product portfolio
 
-- **A "read this first" path per community:** the most cited classics interleaved with the method-lineage sources,
-  backed by experiment 13. It replaces surveys as the default reading suggestion.
-- **"How people got in" on My paper and Start here:**
-  - entry routes that worked: anchored in the community's literature, with an insider co-author;
-  - routes that cost: unusual methods, new problems.
+`src/landscape/orientation.py` turns the three results into artefacts, written next to the other portfolio files
+in `data/projects/<run>/portfolio/`:
 
-  It would be phrased as a description of what happened here, not advice that guarantees anything (experiment 12).
-- **A "lasting" marker on reading lists:** the idea is already close to work in several communities (breadth). It
-  would be shown with genericness controlled, because breadth alone partly measures how generic the wording is
-  (experiment 14).
+```bash
+uv run --no-sync python src/landscape/orientation.py --run-id dro-pilot   # ~3 s; LANDSCAPE_DB may point at a copy
+```
 
-All three need the web app's data layout to settle; the scripts already read it.
+| File | Feature | Backed by | Pilot |
+| --- | --- | --- | --- |
+| `reading_paths.parquet` | **Read this first**, per community: up to 20 papers alternating *classic* (most cited by the community) and *source of current methods* (the earliest close source of the methods and innovations of its last 3 years), with how many community papers cite each and how many current methods it is the source of | exp13 | 24 communities |
+| `entry_routes.parquet`, `entry_effects.json` | **How people got in**, per community and strategy: entries of the latest year with three complete years of outcomes (2022 → 2023-25), their stayed and taken-up rates, insider co-author share, up to 3 example entries taken up by others, and the strategy mix of the latest year; plus the pilot's like-for-like effects | exp12 | 1,209 entries with outcomes |
+| `lasting.parquet` | **Lasting marker**, per paper from 2018 on: breadth at publication (how many communities' earlier work is already close to its idea), ranked among equally generic ideas; *lasting* = top third and breadth ≥ 2. Older papers are *not assessed* (the map is too thin before 2018) | exp14 | 1,383 of 4,311 assessed |
+
+**How to present them:**
+- **Read this first:** say which role each paper plays. The classics are what newcomers end up citing; the sources
+  of current methods are what they end up building on. Surveys are not the default, because newcomers here neither
+  cited nor built on them.
+- **How people got in:** describe what happened on this map ("entries anchored in the community's literature, and
+  with an insider co-author, were taken up more; unusual methods and new problems less, over three years"), with
+  examples. It is not advice that guarantees an outcome.
+- **Lasting:** a small marker with its evidence. Breadth at publication is the clearest trait of ideas still used
+  5+ years later; novel ideas fade faster, and early citations say nothing.
+
+The web app renders them (Start here and My paper); the Streamlit explorer is being replaced by it.
