@@ -37,6 +37,10 @@ explorer's **Experiments** view keeps every result table open and re-runnable (`
 | 15 | Semantic but not cited (recipe) | Phase 8: empty on the pilot | Dropped; replaced by #5 | — |
 | 16 | Contrastive (centered) embeddings for bridges | 8c: lower on the complete chronological test (18.6% vs 19.5%) | Dropped | — |
 | 17 | **Global success** (citations from all of science) | exp5: no content, question, credibility or import family adds beyond the base after field normalization; the corpus is selected on this outcome | Open: needs an unbiased field sample | — |
+| 18 | **Where the citation network is blind** (no shared references, uncited) | exp7: coupling needs no received citations but defines the reachable set (91% of adoptions share references); semantics adds +0.08 to +0.12 AUC on fresh / uncited papers; network-blind adoption is too rare to measure (35 cases) | Use semantics for fresh and uncited papers; network-blind discovery is open | Papers to bring in, Hidden gems |
+| 19 | **Seeing a community before it forms** | exp8: best AUC 0.58–0.61, top 50 at the base rate; births are offshoots within one community, not crossovers; signals mostly point at the corpus's edges | Not demonstrated; frozen for the prospective test | — |
+| 20 | **Uptake without citation** (the content moves towards an idea) | exp9: 95% of realized uptake is uncited; for a given idea, semantics ≈ coupling ≈ persistence (about 0.64) | A better outcome measure; no special foresight | — |
+| 21 | **Prospective snapshot** (2026-10-21) | 19 frozen lists with baselines; SHA-256 manifest and protocol in docs/snapshots/ | Running: score at 6, 12 and 24 months | — |
 
 ## Borrowed ideas (exp6)
 
@@ -67,7 +71,12 @@ explorer's **Experiments** view keeps every result table open and re-runnable (`
    in-field; being the first to import, or borrowing from far away, does not.
 4. **Success depends on the audience.** In-field and global success are almost unrelated
    (r ≈ −0.02).
-5. **Measurement creates much of the signal.** Field citation norms, audience size,
+5. **Ideas spread far more than citations show.** When a community's later work moves towards an
+   idea, it cites that idea only about 5% of the time. Citation-based evaluation sees a small,
+   socially filtered part of uptake.
+6. **New communities grow out of one community's literature, not between two.** Bridging
+   signals point away from births; nothing tested sees a birth coming with useful precision.
+7. **Measurement creates much of the signal.** Field citation norms, audience size,
    self-citation, duplicate records, sampling routes and leave-one-cutoff-out training (which
    can learn from the test period's future) each inflated something on the pilot.
 

@@ -1,0 +1,178 @@
+{
+  "run": "dro-pilot",
+  "snapshot_date": "2026-10-21",
+  "created_at": "2026-10-21T10:57:49",
+  "git_commit": "e9a9b42c6455f1f6aa47125649e815d03818ad9c",
+  "corpus_papers": 5410,
+  "latest_publication_year": 2026,
+  "embedding_model": "google/embeddinggemma-2|task: sentence similarity | query:|d768",
+  "extraction_model": "deepseek/deepseek-v4.1-flash",
+  "lists": [
+    {
+      "list": "bridge_paper",
+      "rows": 250,
+      "what": "Top 10 innovation papers per problem community (alpha 0.5, medium) not yet cited by it",
+      "hit": "a paper published after the snapshot, assigned to the community (nearest frozen centroid), cites the work (or a known alias)",
+      "baseline_of": null
+    },
+    {
+      "list": "bridge_paper_baseline_popularity",
+      "rows": 250,
+      "what": "Popularity baseline for bridge_paper: the 10 most cited innovation papers outside each community and not yet cited by it",
+      "hit": "as bridge_paper",
+      "baseline_of": "bridge_paper"
+    },
+    {
+      "list": "bridge_paper_gem",
+      "rows": 125,
+      "what": "Top 5 per community among papers cited at most once",
+      "hit": "as bridge_paper",
+      "baseline_of": null
+    },
+    {
+      "list": "bridge_paper_gem_baseline_random",
+      "rows": 125,
+      "what": "Random baseline for gems (seed 20261021)",
+      "hit": "as bridge_paper",
+      "baseline_of": "bridge_paper_gem"
+    },
+    {
+      "list": "early_work",
+      "rows": 50,
+      "what": "Top 50 recent papers expected to be top-quartile for their year",
+      "hit": "top quarter of its publication-year cohort (frozen corpus papers of that year) for citations received after the snapshot: (a) global, OpenAlex counts_by_year; (b) from new papers in the field",
+      "baseline_of": null
+    },
+    {
+      "list": "early_work_baseline_citations",
+      "rows": 50,
+      "what": "Baseline: the 50 most cited recent research papers so far",
+      "hit": "as early_work",
+      "baseline_of": "early_work"
+    },
+    {
+      "list": "early_work_cohort",
+      "rows": 495,
+      "what": "The cohort early_work is ranked within",
+      "hit": "\u2014",
+      "baseline_of": null
+    },
+    {
+      "list": "method_transfer",
+      "rows": 50,
+      "what": "Top 50 empty problem x method cells (alpha 0.5, medium)",
+      "hit": "at least 2 papers published after the snapshot fall in the cell (nearest frozen centroids)",
+      "baseline_of": null
+    },
+    {
+      "list": "method_transfer_baseline_popularity",
+      "rows": 50,
+      "what": "Baseline: empty cells with the largest row x column totals",
+      "hit": "as method_transfer",
+      "baseline_of": "method_transfer"
+    },
+    {
+      "list": "bridge_lim_inn",
+      "rows": 50,
+      "what": "Top 50 limitation -> innovation community pairs",
+      "hit": "(a) citations from the first community to the second at least triple per year after the snapshot; (b) a realized combination: a new paper whose problem is nearest the first community and whose method or innovation is nearest the second, whether or not it cites it",
+      "baseline_of": null
+    },
+    {
+      "list": "bridge_lim_inn_baseline_random",
+      "rows": 50,
+      "what": "Random community-pair baseline (seed 20261021)",
+      "hit": "as bridge_lim_inn",
+      "baseline_of": "bridge_lim_inn"
+    },
+    {
+      "list": "external_imports",
+      "rows": 100,
+      "what": "Top 100 external works by the exp6 model (as of the latest complete year)",
+      "hit": "the share of new field papers citing the work in the 12 / 24 months after the snapshot is at least 1.5x its share in the three years before, with at least 3 citing papers",
+      "baseline_of": null
+    },
+    {
+      "list": "external_imports_outside",
+      "rows": 50,
+      "what": "Top 50 of the outside-the-field scope",
+      "hit": "as external_imports",
+      "baseline_of": null
+    },
+    {
+      "list": "external_imports_baseline_rate",
+      "rows": 100,
+      "what": "Baseline: the 100 most cited by the field in the last 3 years",
+      "hit": "as external_imports",
+      "baseline_of": "external_imports"
+    },
+    {
+      "list": "rising_pockets",
+      "rows": 31,
+      "what": "Recent papers in the top 5% of local momentum",
+      "hit": "the share of papers published after the snapshot inside the paper's 15-nearest-neighbour ball is at least 1.5x the share in the year before the snapshot",
+      "baseline_of": null
+    },
+    {
+      "list": "rising_pockets_baseline_random",
+      "rows": 31,
+      "what": "Random baseline from the same papers",
+      "hit": "as rising_pockets",
+      "baseline_of": "rising_pockets"
+    },
+    {
+      "list": "emerging_cluster",
+      "rows": 81,
+      "what": "Clusters ranked by E' (direction: read with care)",
+      "hit": "the cluster's share of new papers after the snapshot is above its share in the three years before",
+      "baseline_of": null
+    },
+    {
+      "list": "corpus_ids",
+      "rows": 5410,
+      "what": "Every paper in the corpus at the snapshot: later papers are new",
+      "hit": "\u2014",
+      "baseline_of": null
+    },
+    {
+      "list": "birth_regions",
+      "rows": 200,
+      "what": "Regions where experiment B expects new communities to form",
+      "hit": "see exp8_birth.py: the region becomes dense with papers published after the snapshot",
+      "baseline_of": null
+    }
+  ],
+  "sha256": {
+    "birth_regions.parquet": "2086b473edd972235d0323f572c2852c36f262e6d0892c48b496b93bd9d8819e",
+    "bridge_lim_inn.parquet": "bc1191c91f86e0e197b031fff5fafb1abf53703a74f164874dee98a177c0d7a7",
+    "bridge_lim_inn_baseline_random.parquet": "2cfc7d1e2315e6bb996de824837074a9e5eda9ac0445fa54dc3d45f90dc9f0a8",
+    "bridge_paper.parquet": "113555dc0da28e72d00b1db56ddfd1df85937470e60e10ac7a3003811fd58b17",
+    "bridge_paper_baseline_popularity.parquet": "e01168a0946914374b1fa3524bd6cf64be6fd16e0b391c0549a194fd8b506359",
+    "bridge_paper_gem.parquet": "c113548a5d63c7c369e519e93e39770268403be45a0a629bfc93ffbc9c967be1",
+    "bridge_paper_gem_baseline_random.parquet": "2f80803352ba48a54d8c8adc43dbb39755ec01e0bfce24e6e701c730e20d1d62",
+    "cluster_centroids.parquet": "7e7c2663d6e3ac904b034ea223a706aca7cc37d74c830d18d4938f5ddf2d9ee2",
+    "corpus_ids.parquet": "332a949d910c2cc2132425c12761c343eadd190aef94c91585ead9a0f89100e6",
+    "early_work.parquet": "9352ba3a99c4f94d815a92adc2956f65e1e6c3544fc5b7e036d8d8278f711ecb",
+    "early_work_baseline_citations.parquet": "21a953ae2b53b57ca445a3b33960c9ee12ece5597c94f3b239482b3842be5729",
+    "early_work_cohort.parquet": "5d40f05a199c35505e594ac46ca32712969c1f643e4050980786e2582ffdcef6",
+    "emerging_cluster.parquet": "b27989ca68faea422d8eacf4c5b9f4025dd3e900a0a8c6872dddea125185a81e",
+    "external_imports.parquet": "ef8b44bb878636facf378f2bcb0558c219f1412ddbec583c615edafdf8d423ec",
+    "external_imports_baseline_rate.parquet": "5d438a2dba03748904ca1d2d822d0c7f59236939d013b7ece09e68d05f690a42",
+    "external_imports_outside.parquet": "6043bf62fca2308219877ea1edff234dc05c96eed122484c0bf2b19bfd008c11",
+    "method_transfer.parquet": "a3fe4caf00bef427f0094b810767b7887941e7157423992cd49d3051f02ba26d",
+    "method_transfer_baseline_popularity.parquet": "56c206f878d20752d21a98e1ed4102f1429bc3f9aea2d259ae6e030dd5714800",
+    "rising_pockets.parquet": "4620daccf40970b86f652d32e401d06fc11d3d95706e667d9ca7bc757099f89c",
+    "rising_pockets_baseline_random.parquet": "ded62aec58e9cbccf277f80f9d49fd510065103e19077fafb0a4b0441ff91489"
+  },
+  "protocol": {
+    "horizons_months": [
+      6,
+      12,
+      24
+    ],
+    "new_papers": "Papers published after snapshot_date that are not in corpus_ids, collected by re-running the run's expansion routes with the same parameters (record the date and the route of each).",
+    "assignment": "New papers get facets and embeddings with the frozen models above and are assigned to the nearest frozen centroid (cluster_centroids.parquet).",
+    "comparison": "Each list is compared with its baseline_of list on the same hit definition: precision@k (per community where lists are per community) with a bootstrap over communities. Report every list, including the ones that lose.",
+    "no_peeking": "The lists are not edited after this date; a change shows as a SHA-256 mismatch with the copy of this manifest in docs/snapshots/."
+  }
+}

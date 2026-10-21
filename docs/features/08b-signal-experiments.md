@@ -31,6 +31,10 @@ uv run python scripts/phase8b/exp5_features.py        # writes data/backtest/exp
 uv run python scripts/phase8b/exp5_evaluate.py [logit|hgb] [y_...]
 uv run python scripts/phase8b/external_mine.py [fetch] [extract] [embed]   # exp6 data (~$1.10 LLM)
 uv run python scripts/phase8b/exp6_imports.py         # before exp5_features.py, for the borrowing family
+uv run python scripts/phase8b/exp7_coupling.py        # coupling vs semantics by stratum
+uv run python scripts/phase8b/exp8_birth.py           # community birth (needs exp6 for borrowing features)
+uv run python scripts/phase8b/exp9_realized.py && uv run python scripts/phase8b/exp9_within_candidate.py
+uv run python scripts/phase8b/freeze_snapshot.py      # prospective snapshot (date defaults to today)
 ```
 
 `LANDSCAPE_DB=<copy of data/landscape.duckdb>` lets the scripts run while the explorer holds the lock.
@@ -49,6 +53,9 @@ leave-one-cutoff-out numbers below, not the in-sample fit.
 | 4. Method transfer as matrix completion | cluster level, item CF AUC 0.70 (≥ 1 paper) / 0.80 (≥ 2) vs recipe 0.67 / 0.66, popularity 0.51 / 0.62 | **adopted**: `SignalParams.transfer_method = "item_cf"` |
 | 5. Topic, question, credibility and imports beyond rich-get-richer | in-field, peer-normalized, no self-citations: rising imports +0.022 AUC, venue +0.017, author +0.012, topic/question +0.007 (not significant); global field-normalized: only global author credibility, +0.012 (forward route) | findings; not adopted yet |
 | 6. Ideas borrowed from outside the field | imports: semantic fit to where the field's questions are moving +0.020 AUC, global trend +0.013 (strict hit, work-level bootstrap). Papers: borrowing what trends globally, from nearby, +0.016 in-field; nothing globally | **adopted as a review list**: Bridges › From outside the field |
+| 7. Coupling vs semantics | coupling needs no received citations (fresh papers: 0.65 → 0.84) but defines the reachable set (91% of adoptions share references); semantics adds +0.08 to +0.12 on fresh / uncited papers | findings |
+| 8. Community birth | best AUC 0.58–0.61; p@50 at the base rate; births are offshoots within one community, not crossovers | **not demonstrated**; live list frozen as a low-confidence prediction |
+| 9. Realized opportunities (content) | 95% of realized uptake is uncited; for a given idea, semantics ≈ coupling ≈ persistence (about 0.64) | better outcome measure; no special foresight |
 
 ## 1. Paper-level bridges
 
@@ -364,6 +371,118 @@ For each corpus paper, the external works it cites that were already imported by
 - **Coverage gap:** the rest of the list is often *core papers of this field that the corpus
   never fetched*, such as "Data-driven robust optimization" and "Tight bounds for some risk
   measures". That is a coverage gap, and a direct input for corpus expansion.
+
+## 7. Coupling vs semantics: what needs the citation network?
+
+**Question.** Bibliographic coupling (shared references) is the strongest bridge feature. Does its
+strength depend on received citations, and what is left for semantics where the network is blind?
+
+- **Setup:** the experiment 1 pairs (community X, innovation paper i not yet cited by X). Models
+  are trained on all pairs and scored inside strata where the network gives less and less.
+- **Protocols:** leave-one-cutoff-out, and chronological (train 2020, test 2023; outcomes include
+  partial 2026). Both agree.
+
+AUC, leave-one-cutoff-out (chronological in brackets):
+
+| Stratum | Pairs / adoptions (LOCO) | Citations + age | + coupling | Semantic only | All |
+| --- | --- | --- | --- | --- | --- |
+| Fresh (published in T) | 42,720 / 858 | 0.65 (0.64) | **0.84** (0.83) | 0.75 (0.75) | **0.86** (0.85) |
+| Uncited at T | 117,794 / 936 | 0.66 (0.70) | 0.81 (0.82) | 0.78 (0.78) | 0.84 (0.85) |
+| Zero coupling | 76,424 / 327 | 0.77 (0.80) | — | 0.63 (0.61) | 0.85 (0.84) |
+| Uncited and zero coupling | 35,758 / 35 | 0.54 (0.69) | — | 0.66 (0.76) | 0.64 (0.75) |
+
+1. **Coupling does not need received citations.** It is strongest on papers published in the
+   cutoff year itself: adding it to citations + age lifts AUC from 0.65 to 0.84 (chronological:
+   0.64 to 0.83). A reference
+   list exists on the day a paper appears.
+2. **Coupling defines what is reachable.** 91% of adoptions involve a candidate that shares
+   references with the adopting community. Without shared references, adoption is rare (0.4%
+   vs 1.5%), and semantics alone is weak (0.61–0.63), weaker than popularity.
+3. **Semantics helps most on fresh and uncited papers:**
+   - alone, +0.08 to +0.12 AUC over citations + age (90% CI above zero in both protocols);
+   - on top of coupling, +0.02 to +0.03.
+4. **Truly network-blind adoption** (uncited and no shared references) is too rare to measure:
+   35 adoptions in four cutoffs (7 in the chronological test). In that stratum, models trained on
+   all pairs differ mainly in the sign of the age coefficient (citations and coupling are both
+   zero), so their differences are artefacts.
+
+## 8. Community birth: seeing new work before its community exists
+
+**Question.** Every earlier test predicts uptake by communities that already exist at the
+cutoff. Can signals at T show where a new community will form?
+
+**Births.** Leiden communities are too coarse to show births (new work is absorbed), so births
+are detected in embedding space:
+- **Frontier papers:** papers from T+1…T+3 in the top quarter of distance from everything
+  published up to T.
+- **Births:** groups of at least 5 frontier papers close to each other. Cutoffs 2019–2022 give
+  104 births.
+- **Seeds:** papers from T−2…T nearest to several members of a birth (337 of 8,163 recent
+  papers).
+
+**Test.** Signals at T rank the seeds against all other recent papers. Because seeds of new work
+tend to sit at the edge of existing work, the base model includes isolation, novelty, citations
+and coupling.
+
+| Population | Base AUC | All signals | Gain (90% CI) | p@50 (base rate 0.04) |
+| --- | --- | --- | --- | --- |
+| All recent papers | 0.55 | 0.58 | +0.029 [+0.004, +0.055] | 0.04 |
+| Forward route only | 0.57 | 0.61 | +0.049 [+0.019, +0.080] | 0.085 |
+
+- **Not demonstrated.** The best model reaches AUC 0.58–0.61, and the top 50 are close to the
+  base rate. Local momentum, reference-pair novelty and borrowing add nothing significant.
+- **Births are offshoots, not crossovers.** Straddling several communities' literatures points
+  *away* from births (bridging entropy AUC 0.38–0.43). Being concentrated in one community's
+  literature points towards them (0.57–0.61). Nearby stated limitations help a little in the
+  forward route (+0.039).
+- **Sampling shows through.** Many births consist mostly of author-route papers (seed authors'
+  newest work drifting into new topics). Even restricted to the forward route, the live list's
+  top is mostly off-field outliers, such as function theory and ship-engine diagnostics. The
+  signals mainly point at the corpus's edges.
+- **Live list:** frozen in the prospective snapshot as a pre-registered, low-confidence
+  prediction (`exp8_regions_live.parquet`). It is not shown in the product.
+
+## 9. Realized opportunities: content, not citations
+
+**Question.** Citation adoption is a social act. Did the opportunity *happen*, whether or not
+anyone cited it?
+
+**Realized.** A pair (X, i) counts as realized when, in T+1…T+3:
+- an X paper's method or innovation is close to i's innovation (cosine ≥ 0.894, the 99th
+  percentile of random pairs), and
+- it is closer than any of X's papers from T−2…T were.
+
+| Outcome (LOCO) | Positives | Citations + age | + coupling | Semantic only | All |
+| --- | --- | --- | --- | --- | --- |
+| Cited | 3,757 | 0.71 / p@10 0.18 | 0.82 / 0.22 | 0.72 / 0.08 | 0.84 / 0.23 |
+| Realized | 19,122 | 0.61 / 0.17 | 0.73 / 0.22 | 0.76 / 0.31 | 0.79 / 0.27 |
+| Realized without citation | 18,128 | 0.60 / 0.11 | 0.72 / 0.15 | 0.76 / 0.28 | 0.78 / 0.23 |
+
+- **95% of realized uptake happens without citing the idea** (994 of 19,122 realized pairs were
+  cited). Measured by citations alone, uptake of ideas looks about five times smaller than it is.
+- **Control for generic ideas** (`exp9_within_candidate.py`). Rank communities *for each idea*,
+  so that an idea close to everything cannot score by being generic. Then semantics (0.64),
+  coupling (0.63) and plain persistence (the community was already close: 0.65) are about
+  equal. Most of semantics' apparent advantage above came from generic ideas.
+- **Conclusion:** the content outcome is a better *measurement* of uptake, but it does not show
+  that semantics has special foresight about who will take an idea up.
+
+## Prospective snapshot (frozen 2026-10-21)
+
+`freeze_snapshot.py` froze 19 lists, each recommendation list next to a baseline frozen at the
+same moment:
+- paper bridges and gems; early work;
+- method transfer; limitation → innovation;
+- external imports; rising pockets; emerging clusters;
+- the birth regions;
+- the corpus ids and the community centroids.
+
+The files are in `data/snapshots/dro-pilot/2026-10-21/`. The manifest, with SHA-256 hashes of
+every file and the pre-registered scoring protocol (hit definitions; horizons of 6, 12 and 24
+months; comparison with the baselines), is versioned in
+`docs/snapshots/dro-pilot-2026-10-21.json`. It is the only test free of hindsight, model
+leakage and corpus selection. Score it by collecting papers published after the snapshot date
+with the same expansion routes.
 
 ## Explorer
 

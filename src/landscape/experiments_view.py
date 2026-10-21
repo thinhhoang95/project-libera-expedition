@@ -24,6 +24,9 @@ PILOT_DECISIONS = {
     "exp4_method_transfer": "adopted: item CF for bridge_method_transfer (grid diamonds)",
     "exp5_beyond_rich_get_richer": "findings only; not used by any signal yet",
     "exp6_imports": "adopted as a review list (Bridges tab, From outside the field)",
+    "exp7_coupling": "findings: coupling needs no received citations but defines the reachable set",
+    "exp8_birth": "not demonstrated; live list frozen in the prospective snapshot (low confidence)",
+    "exp9_realized": "findings: 95% of realized uptake is uncited; no special foresight from semantics",
 }
 ORDER = list(PILOT_DECISIONS)
 SCRIPTS = {
@@ -34,6 +37,9 @@ SCRIPTS = {
     "exp5_beyond_rich_get_richer": ["fetch_counts_by_year.py", "exp6_imports.py", "exp5_features.py",
                                     "exp5_evaluate.py [logit] [hgb]"],
     "exp6_imports": ["external_mine.py fetch extract embed", "exp6_imports.py"],
+    "exp7_coupling": ["exp7_coupling.py"],
+    "exp8_birth": ["exp8_birth.py"],
+    "exp9_realized": ["exp9_realized.py", "exp9_within_candidate.py"],
 }
 
 
