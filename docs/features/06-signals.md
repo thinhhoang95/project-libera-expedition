@@ -16,7 +16,12 @@ uv run landscape signals --run-id dro-pilot     # ~3 min on the pilot, ~$0.06 fo
 
 Run it after `core` and `viz`. It also writes the explorer's `viz_cluster_year` statuses,
 `viz_flow_year` (citation and migration flows), `viz_author_year` (author paths), and
-`paper_scores` (novelty per facet, CD index).
+`paper_scores` (novelty per facet, CD index, local momentum).
+
+Phase 8b added backtested signals: paper bridges, early work, item-CF method transfer and
+local momentum. They are described below, and their evidence is in
+[08b-signal-experiments.md](08b-signal-experiments.md). Two of them score with logistic models
+saved in `src/landscape/models/` and read through `model_score()`.
 
 ## Hub clusters (reported separately, not dropped)
 
@@ -124,12 +129,22 @@ Evidence is the top-5 limitation ↔ innovation pairs, stored in `features.pairs
 
 ### (b) Method transfer (`bridge_method_transfer`)
 
-`T(P, m) = Σ sim(P, P′)·1[M(P′, m) > 0] / Σ sim(P, P′)` over the 10 nearest problem clusters,
-for cells with M(P, m) = 0.
+Candidates are empty cells, M(P, m) = 0, of the problem × method matrix (α = 0.5, medium).
 
-The indicator saturates at 1 for large method clusters, so the score is broken by
-`neighbor_usage_share`: how much of the neighbours' output uses m. `transfer_score` keeps the
-recipe value.
+- **Default (`transfer_method = "item_cf"`), item-based collaborative filtering:**
+  `CF = L · S`, where `L = log(1 + M)` and S is the cosine similarity between method columns
+  (diagonal zeroed). It favours methods that the problems using P's methods also use. In the
+  Phase 8b backtest, its AUC is 0.70 (≥ 1 paper in T+1…T+3) and 0.80 (≥ 2), against 0.51 / 0.62
+  for popularity. Its p@50 is about level with a method-profile neighbour share (see 08b).
+  Evidence: `features.similar_methods_already_used`.
+- **Recipe (`transfer_method = "recipe"`):**
+  `T(P, m) = Σ sim(P, P′)·1[M(P′, m) > 0] / Σ sim(P, P′)` over the 10 nearest problem clusters
+  by centroid. The indicator saturates at 1 for large method clusters, so ties are broken by
+  `neighbor_usage_share`: how much of the neighbours' output uses m. Phase 8 could not tell it
+  apart from random.
+- **Stored for both:** `features.item_cf` and `features.recipe_transfer_score`.
+
+Pilot: 174 candidates; the judge's top scores are 4–5.
 
 ### (c) Unresolved limitations (`bridge_unresolved_limitation`)
 
@@ -155,6 +170,25 @@ citation flow is at or below the 10th percentile.
 **Pilot: empty, and this is a genuine result.** The 15 most similar pairs (cosine ≥ 0.973)
 all cite each other heavily. The 62 pairs with zero flow are not semantically close.
 
+### (e) Paper bridges (`bridge_paper`, `bridge_paper_gem`)
+
+The same question as (a), asked of single papers: which innovation papers will problem cluster
+X start citing?
+
+- **Candidates:** innovation papers outside X that no X paper cites yet.
+- **Scoring:** a logistic model (`models/paper_bridges.json`) over five features: log
+  citations so far, bibliographic coupling with X, similarity to X's problem centroid, mean
+  top-3 similarity to X's limitations (with the 20% most generic dropped), and age.
+- **Lists per cluster:**
+  - `bridge_paper`: the 10 most likely (`paper_bridges_per_cluster`).
+  - `bridge_paper_gem`: the top 5 among papers cited at most once (`paper_bridges_gems_per_cluster`).
+- **Evidence:** the innovation paper and X's best-matching limitation
+  (`features.best_matching_limitation`).
+- **Backtest** (leave-one-cutoff-out): p@10 per cluster 0.23 vs popularity 0.19 and random
+  0.02; AUC 0.84, including 0.84 on the long tail, where popularity scores 0.55.
+- **Pilot:** 250 + 125 rows, split by `group_kind`.
+- **Not judged:** the LLM judge does not see these rows.
+
 ### LLM judge
 
 - **Inputs:** the top 50 candidates of each bridge type go to `deepseek/deepseek-v4-pro` (fp8+,
@@ -179,15 +213,29 @@ all cite each other heavily. The 62 pairs with zero flow are not semantically cl
 Backtest verdict for this section: seeders, brokers and recent-paper coupling **do not beat
 popularity** as predictors of future citations, so they are descriptive roles, not predictions
 (see [08-backtest.md](08-backtest.md)). Paper novelty is likewise anti-predictive of 3-year
-citations.
+citations. `early_work` (below) is the exception: a backtested model that beats citations so
+far.
 
 - **`seeder_author`**: count of an author's papers among the earliest 10% of clusters whose g is
   above the median.
 - **`broker_author`**: participation coefficient `1 − Σ (k_ac / k_a)²` over clusters, for
   authors with at least 3 papers. Pilot top 5: Iyengar, Kuhn, Calafiore, Natarajan, Blanchet.
-- **`recent_paper_coupling`**: for papers from the last 2 years, the number of corpus papers
-  sharing at least 2 references (bibliographic coupling). Surveys are excluded, because they
-  couple with almost everything.
+- **`early_work`** (replaces `recent_paper_coupling`): papers from T−1…T most likely to land in
+  the top quartile of their year for citations in the next three years.
+  - **Model:** logistic (`models/early_work.json`) on citations so far, bibliographic
+    coupling (papers sharing ≥ 2 references), reference count, the cluster's E′, centrality,
+    novelty (negative weight), author count, and survey / theory / quantitative flags.
+  - **No author fame:** it is left out on purpose and adds only about 0.002 AUC.
+  - **Types:** only articles, preprints and conference papers. OpenAlex dates new editions of
+    old books as new works, and a 2025 textbook chapter typed `other` once ranked first.
+  - **Backtest:** AUC 0.815, p@50 0.67, against 0.62 for citations so far and 0.50 for
+    coupling alone.
+- **`local_momentum`** (in `paper_scores`, not a ranked signal): for papers from T−1…T, the log
+  ratio of the share of year-T papers to the share of year-(T−1) papers inside the ball of the
+  paper's 15 nearest earlier neighbours (abstract vectors).
+  - **Backtest:** weak but positive (ρ +0.13 with local growth; p@50 0.17 vs 0.08 random).
+  - **Use:** it drives the explorer's *Rising pockets* layer.
+  - **Caveat:** preprint/article duplicates of one paper inflate it.
 - **`institution_seeder` / `institution_broker`**: author scores aggregated through authorships,
   weighted by 1 / (number of institutions on the authorship). Pilot seeders: MIT, Stanford,
   Meta, UC Berkeley, KU Leuven.
@@ -202,5 +250,7 @@ These lists are internal decision support, not a public ranking of people (recip
   not all of science.
 - Clusters are fitted on all years. That is fine for the live run, but the Phase 8 backtest
   must re-fit at each cutoff, as the recipe requires.
+- About 2% of the corpus is duplicate OpenAlex records of one paper (preprint and article
+  versions). They inflate coupling and local momentum for those papers.
 - The judge knows the future. Backtests must switch it off (`--skip-judge`) or use a model with
   an earlier training cutoff.

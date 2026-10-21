@@ -15,7 +15,7 @@ Last updated 2026-10-21. Read this first, then `README.md` and `docs/features/`.
 | 6b Streamlit explorer (every signal as a layer; corpus, facet and cluster review) | prototype | `06b-explorer.md` |
 | 7 Integrity module | **not started** (out of scope so far) | — |
 | 8 Backtest on the existing corpus (cutoffs 2020–2023) | done | `08-backtest.md` |
-| 8b Signal-improvement experiments | **in progress** (see below) | to write: `08b-signal-experiments.md` |
+| 8b Signal-improvement experiments | done (explorer and docs too) | `08b-signal-experiments.md` |
 
 The pilot run is `dro-pilot` (seed: Esfahani & Kuhn, Wasserstein DRO, DOI
 10.1007/s10107-017-1172-1): 5,410 papers, total spend about $0.65 so far. The user confirmed DRO
@@ -51,38 +51,28 @@ The production models are fitted on all four cutoffs by `scripts/phase8b/fit_mod
 saved to `src/landscape/models/{paper_bridges,early_work}.json` (committed). `signals.py` loads
 them through `model_score()`.
 
-### State at handoff
+### Done on 2026-10-21 (macOS machine)
 
-- The code for all adopted items is in `src/landscape/signals.py` and `config.py`.
-- The last `landscape signals --run-id dro-pilot` run finished:
-  - **Hidden gems work:** 125 `bridge_paper_gem` rows, plausible titles cited once.
-  - **Early work still put an old book chapter first.** "Convex Optimization Theory" (2025) is
-    typed `other` by OpenAlex.
-- **Fix committed after that run but not yet re-run:** early work now keeps only these types:
-  article, preprint, conference-paper, proceedings-article. Re-run first:
-  `uv run landscape signals --run-id dro-pilot` (the judge costs about $0.06). Then check that
-  the early-work top 10 is research papers.
-- An earlier run of the same code without those two fixes worked and produced `bridge_paper`
-  (250 rows), `early_work` (50) and item-CF method transfers (174, judge top scores 4–5).
+- **Signals re-run:**
+  - `early_work` is now 48 articles and 2 preprints; no textbooks.
+  - There are 125 `bridge_paper_gem` rows.
+- **Explorer:**
+  - Bridges tab → *Papers to bring in*.
+  - People tab → *Early work*.
+  - Map layer *Rising pockets*.
+- **Docs:** `08b-signal-experiments.md` is written, and `06-signals.md` and `06b-explorer.md`
+  are updated. All four experiments were re-run, and they reproduce the numbers above.
+- **`landscape status`:** fixed. Newer DuckDB rejects the unquoted alias `stable`.
 
-### Next steps (in order)
+### Next steps
 
-1. **Re-run signals** and check the output:
-   - `bridge_paper_gem` rows exist.
-   - `early_work` has no old textbooks at the top.
-2. **Explorer:**
-   - In the Bridges tab, add "Papers to bring in" (likely and hidden-gem lists per cluster, with
-     the matched limitation as evidence).
-   - Rename the People tab's recent-paper list to "Early work".
-   - Add a **Rising pockets** layer (rings on recent papers in the top 5% of `local_momentum`).
-3. **Docs:**
-   - Write `docs/features/08b-signal-experiments.md` from the tables above.
-   - Update `06-signals.md` (item CF transfer, paper bridges, early work, local momentum) and
-     `06b-explorer.md`.
-4. **Optionally add the experiments to `landscape backtest`** so they re-run with one command.
-   The scripts currently depend on the cutoff runs `dro-pilot@T2020..2023`, which `backtest`
-   builds.
-5. **Commit.**
+1. **Optionally fold the experiments into `landscape backtest`**, so they re-run with one
+   command.
+2. **Deduplicate preprint/article twins.** About 2% of the corpus (101 title groups, 217
+   records) is the same paper under several OpenAlex ids. This inflates coupling and local
+   momentum: 5 of the 31 top rising pockets are duplicates.
+3. **Method transfer p@50:** item CF wins on AUC but not on p@50 against a method-profile
+   neighbour share (0.255 vs 0.270). Both are within noise; see 08b, section 4.
 
 ### Further ideas not yet tried
 
@@ -127,6 +117,17 @@ them through `model_score()`.
    process per file: **close the explorer before running pipeline steps**.
 
 ## Machine-specific notes
+
+- **macOS with the repo on an exFAT drive** (`/Volumes/CrucialX`):
+  - **No symlinks:** exFAT can't hold them, so the venv lives off the drive. Set
+    `export UV_PROJECT_ENVIRONMENT=~/.venvs/libera-expedition` before every `uv run` or
+    `uv sync`. Without it, uv rebuilds `.venv` on the drive and fails.
+  - **Explorer config:** the local `.claude/launch.json` sets the same variable (not committed).
+  - **Windows `.venv`:** removed. On Windows, run `uv sync` again.
+  - **`._*` files:** macOS writes AppleDouble files next to every edited file; `.gitignore`
+    ignores them.
+  - **Line endings:** the Windows checkout had CRLF in the working tree, and git showed 23
+    modified files. They were normalized to LF, which matches the repo; no content changed.
 
 - **Git safe directory:** on the old machine, git needed `-c safe.directory=<repo path>`, because
   that drive doesn't record file ownership. The user's global git config was left untouched.

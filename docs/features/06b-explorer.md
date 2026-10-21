@@ -47,6 +47,10 @@ There is one map, one grid and one time axis, as in the recipe.
     moved within the window.
   - *Novel papers*: open rings on the top 5% novelty papers in the window (novelty of the map's
     facet).
+  - *Rising pockets*: green rings on recent papers in the top 5% of `local_momentum`, which
+    marks neighbourhoods filling up fastest. Only papers from the last two years have it, so
+    the window must reach the end. It is weak (p@50 about 2× random) and meant as a pointer,
+    not a forecast.
   - *Bridges*: accent-coloured dashed arcs for the top limitation → innovation and
     semantic-not-cited candidates. Drawn on problem, α = 0.5, medium, where they are computed.
   - *People*: pick a seeder or broker to see their yearly path on the map, ending at the
@@ -73,11 +77,19 @@ There is one map, one grid and one time axis, as in the recipe.
   window, window share, Δ share, and the as-of scores (growth g, emergence E, niche N, net
   migration, status). A toggle switches between the whole corpus and the corpus without the
   semantic route. Selecting a row selects the cluster everywhere.
-- **Bridges**: candidates by type, with the judge's 1–5 rating, rationale and "obvious reason".
-  The detail shows the limitation ↔ innovation pairs (facet text, year, cosine) or the evidence
-  papers. Reviewers rate each candidate *worth pursuing / obvious / wrong*, which is written to
-  `review_actions` (`view = 'bridges'`).
-- **People**: seeders, brokers and institutions, labelled as internal decision support.
+- **Bridges**: two modes.
+  - *Cluster pairs*: candidates by type, with the judge's 1–5 rating, rationale and "obvious
+    reason". The detail shows the limitation ↔ innovation pairs (facet text, year, cosine) or
+    the evidence papers.
+  - *Papers to bring in*: pick a problem cluster (largest first; defaults to the selected
+    cluster) to see two lists: the 10 innovation papers it is most likely to start citing,
+    and up to 5 hidden gems cited at most once. Selecting a paper shows its innovation text,
+    the cluster's closest limitation, the model features, and the paper card in Detail.
+  - In both modes, reviewers rate each candidate *worth pursuing / obvious / wrong*, which is
+    written to `review_actions` (`view = 'bridges'`).
+- **People**: seeders, brokers and institutions, labelled as internal decision support, then
+  **Early work**: the recent papers the backtested model expects to be top-cited for their
+  year. Selecting one opens its card in Detail.
 - **Grid**: at α = 0.5 the top 25 method-transfer candidates are outlined with accent diamonds
   (new combinations stay as squares).
 
@@ -136,6 +148,10 @@ The four views were exercised in the browser pane at 1600×1000:
 - a cluster-review save, confirmed in DuckDB and then deleted.
 
 Not exercised: the Play animation and the activity-shift compare mode.
+
+The Phase 8b additions were checked the same way: *Papers to bring in* (cluster picker, both
+lists, limitation evidence), the *Early work* list opening a paper card, and the *Rising
+pockets* layer (29 rings at 2018–2026).
 
 ## Not built yet
 

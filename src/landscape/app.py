@@ -158,9 +158,11 @@ def view_map():
         show_flows = st.checkbox("Citation flows", False, **nosig)
         show_mig = st.checkbox("Author migration", False, **nosig)
         show_novel = st.checkbox("Novel papers", False, **nosig)
+        show_pockets = st.checkbox("Rising pockets", False, **{**nosig, "help": nosig["help"] or
+                                   "Recent papers whose neighbourhood is filling up fastest (top 5% local momentum)"})
         show_bridges = st.checkbox("Bridges", False, **nosig)
         show_people = st.checkbox("People", False, **nosig)
-        active = sum([show_density, show_flows, show_mig, show_novel, show_bridges, show_people])
+        active = sum([show_density, show_flows, show_mig, show_novel, show_pockets, show_bridges, show_people])
         if active > 3:
             st.caption("Tip: more than three active layers get hard to read.")
         top_n = st.slider("Arcs / arrows shown", 5, 60, 30, disabled=not (show_flows or show_mig or show_bridges))
@@ -282,6 +284,20 @@ def view_map():
                     text=[f"novel ({nf}): {v:.3f} (descriptive; novelty does not predict 3-year citations)"
                           f"<br>{t[:80]}" for v, t in zip(w.value, w.title.fillna(""))],
                     hovertemplate="%{text}<extra></extra>", name="novel"))
+
+        if show_pockets:
+            lm = q("""SELECT paper_id, value FROM paper_scores WHERE run_id = ? AND metric = 'local_momentum'""", (RUN,))
+            if len(lm):
+                lm = lm[lm.value >= lm.value.quantile(0.95)]
+            w = win.merge(lm, on="paper_id")
+            if len(w):
+                fig.add_trace(go.Scatter(
+                    x=w.x, y=w.y, mode="markers", customdata=w.paper_id,
+                    marker=dict(size=13, symbol="circle-open", color=FLOW_UP, line=dict(width=2)),
+                    text=[f"rising pocket: local momentum {v:.2f}<br>{t[:80]}" for v, t in zip(w.value, w.title.fillna(""))],
+                    hovertemplate="%{text}<extra></extra>", name="pockets"))
+            else:
+                st.caption("Rising pockets mark papers from the last two years: move the window to the end.")
 
         def window_flows(kind):
             f = q("""SELECT year, from_cluster, to_cluster, count FROM viz_flow_year WHERE run_id = ?
@@ -530,7 +546,11 @@ def view_map():
                 st.divider()
                 paper_card(st.session_state.sel_paper)
         with tab_bridges:
-            bridges_panel()
+            mode = st.radio("Show", ["Cluster pairs", "Papers to bring in"], horizontal=True, key="br_mode")
+            if mode == "Cluster pairs":
+                bridges_panel()
+            else:
+                paper_bridges_panel(sel)
         with tab_people:
             people_panel()
 
@@ -608,6 +628,70 @@ def bridges_panel():
             st.success("Saved to review_actions.")
 
 
+def paper_bridges_panel(sel):
+    b = signals_df(("bridge_paper", "bridge_paper_gem"))
+    if b.empty:
+        st.info("No paper bridges. Run `landscape signals`.")
+        return
+    b["subj"] = b.subject.map(json.loads)
+    b["cluster_id"] = b.subj.map(lambda s: s["cluster_id"])
+    labs = dict(zip(b.cluster_id, b.subj.map(lambda s: s.get("label") or s["cluster_id"])))
+    kinds = dict(zip(b.cluster_id, b.group_kind))
+    size = dict(q("SELECT cluster_id, size FROM clusters WHERE run_id = ?", (RUN,)).itertuples(index=False))
+    opts = sorted(labs, key=lambda c: -size.get(c, 0))  # largest first
+    pick = st.selectbox("Problem cluster (α = 0.5, medium)", opts, index=opts.index(sel) if sel in opts else 0,
+                        format_func=lambda c: f"{labs[c]}{' ◇hub' if kinds.get(c) == 'hub' else ''} ({size.get(c, '?')})",
+                        key="pb_cluster")
+    d = b[b.cluster_id == pick]
+    all_labs = dict(q("SELECT cluster_id, label FROM clusters WHERE run_id = ?", (RUN,)).itertuples(index=False))
+    chosen = None
+    for typ, title, help_ in (
+            ("bridge_paper", "Likely to be brought in",
+             "Innovation papers no paper in this cluster cites yet, ranked by the adoption model "
+             "(backtest p@10 0.23 vs popularity 0.19)"),
+            ("bridge_paper_gem", "Hidden gems (cited ≤ 1×)",
+             "Same model, restricted to papers cited at most once (backtest long-tail AUC 0.84 vs popularity 0.55)")):
+        part = d[d.signal_type == typ].sort_values("rank")
+        if part.empty:
+            continue
+        st.markdown(f"**{title}**", help=help_)
+        f = part.features.map(json.loads)
+        tab = pd.DataFrame({"rank": part["rank"], "paper": part.subj.map(lambda s: s.get("title") or s["paper_id"]),
+                            "from": part.subj.map(lambda s: all_labs.get(s.get("from_cluster"), "")),
+                            "cites": f.map(lambda x: x.get("citations_so_far")), "score": part.score.round(2)})
+        ev = st.dataframe(tab, hide_index=True, width="stretch", on_select="rerun", selection_mode="single-row",
+                          key=f"pb_{typ}_{pick}")
+        if ev and ev.selection.rows:
+            chosen = part.iloc[ev.selection.rows[0]]
+    if chosen is None:
+        st.caption("Select a paper for the limitation it matches.")
+        return
+    s, f = chosen.subj, json.loads(chosen.features)
+
+    def facet_text(pid, facet):
+        t = q("SELECT text FROM facets WHERE paper_id = ? AND facet = ?", (pid, facet))
+        return t.text.iloc[0] if len(t) else "—"
+
+    st.markdown(f"**Innovation** ({s.get('title', s['paper_id'])}): {facet_text(s['paper_id'], 'innovation')}")
+    lim = f.get("best_matching_limitation")
+    if lim:
+        lt = q("SELECT year, title FROM papers WHERE paper_id = ?", (lim,))
+        st.markdown(f"**Closest limitation in {labs[pick]}** ({lt.year.iloc[0] if len(lt) else ''}, "
+                    f"*{lt.title.iloc[0][:90] if len(lt) else lim}*): {facet_text(lim, 'limitations')}")
+    st.caption(f"coupling {f.get('coupling')} · problem similarity {f.get('problem_sim')} · "
+               f"limitation similarity {f.get('limitation_sim')} · {f.get('citations_so_far')} citations so far")
+    if st.session_state.get("sel_paper") != s["paper_id"]:  # the Detail tab shows its card
+        st.session_state.sel_paper = s["paper_id"]
+        st.rerun()
+    note = st.text_input("Note", key=f"pbnote_{pick}_{s['paper_id']}")
+    c = st.columns(3)
+    for col, act in zip(c, ["worth pursuing", "obvious", "wrong"]):
+        if col.button(act, key=f"pb_{act}_{pick}_{s['paper_id']}"):
+            record("bridges", {"signal_type": chosen.signal_type, "subject": s, "rank": int(chosen["rank"])},
+                   act, note, alpha={"problem": 0.5})
+            st.success("Saved to review_actions.")
+
+
 def people_panel():
     ppl = signals_df(("seeder_author", "broker_author", "institution_seeder", "institution_broker"))
     if ppl.empty:
@@ -627,6 +711,23 @@ def people_panel():
         st.dataframe(pd.DataFrame({"rank": d["rank"], "name": [json.loads(s).get("name") for s in d.subject],
                                    col: d.score.round(3)}), hide_index=True, width="stretch")
     st.caption("Turn on the People layer and pick an author to see their yearly path on the map.")
+    ew = signals_df(("early_work",))
+    if len(ew):
+        st.markdown("**Early work**", help="Papers from the last two years most likely to become top-cited for "
+                                           "their year (backtest AUC 0.82, p@50 0.67 vs citations-so-far 0.62). "
+                                           "Author fame is deliberately not a feature.")
+        f = ew.features.map(json.loads)
+        tab = pd.DataFrame({"rank": ew["rank"], "year": f.map(lambda x: x.get("year")),
+                            "paper": ew.subject.map(lambda x: json.loads(x).get("title")),
+                            "cites": f.map(lambda x: x.get("citations_so_far")), "score": ew.score.round(2)})
+        ev = st.dataframe(tab.head(30), hide_index=True, width="stretch", on_select="rerun",
+                          selection_mode="single-row", key="early_work")
+        if ev and ev.selection.rows:
+            pid = json.loads(ew.iloc[ev.selection.rows[0]].subject)["paper_id"]
+            if st.session_state.get("sel_paper") != pid:
+                st.session_state.sel_paper = pid
+                st.rerun()
+            st.caption("The Detail tab shows the selected paper's card.")
 
 
 # ================================================================== Corpus view
