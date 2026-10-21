@@ -21,7 +21,8 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 ROOT = Path(__file__).resolve().parents[2]
-SHARED = ROOT / "data" / "shared"
+DATA = Path(os.environ.get("LANDSCAPE_DATA", ROOT / "data"))  # as config.DATA
+SHARED = DATA / "shared"
 RESEARCH = ("article", "preprint", "conference-paper", "proceedings-article")
 THR_REUSE = 0.894   # 99th percentile of random innovation-method cosine, 256-d (experiment 9)
 
@@ -33,7 +34,10 @@ def run_arg(default: str = "dro-pilot") -> str:
 
 
 def project(run: str, *parts: str) -> Path:
-    p = ROOT / "data" / "projects" / run
+    """<data>/projects/<project>/<parts>; a cutoff run <project>@T<year> lives with its project (as config)."""
+    from urllib.parse import quote
+
+    p = DATA / "projects" / quote(run.split("@", 1)[0], safe="")
     for x in parts:
         p = p / x
     p.mkdir(parents=True, exist_ok=True)

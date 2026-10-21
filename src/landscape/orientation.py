@@ -12,8 +12,9 @@
                                 to its idea) and a "lasting" flag = top third of breadth among equally generic ideas
                                 (experiment 14)
 
-Self-contained on purpose: it reads the data layout directly (data/shared/ for the database and vectors,
-data/projects/<run>/ for per-run files), so it does not depend on other modules' internals. Communities are the
+Self-contained on purpose: it reads the data layout directly (<data>/shared/ for the database and vectors,
+<data>/projects/<project>/ for per-run files, <data> = LANDSCAPE_DATA or ./data, as config.py), so it does not
+depend on other modules' internals. Communities are the
 run's live problem communities (alpha 0.5, medium, stable and hub), every paper assigned to the nearest centroid,
 as in the backtest. "Close" = cosine >= 0.894 between an innovation and a method or innovation (256-d), the 99th
 percentile of random pairs (experiment 9).
@@ -33,14 +34,20 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 ROOT = Path(__file__).resolve().parents[2]
-SHARED = ROOT / "data" / "shared"
+# same resolution as config.DATA / config.project_dir: LANDSCAPE_DATA moves the data root, and a cutoff run
+# (<project>@T<year>) lives with its project
+DATA = Path(os.environ.get("LANDSCAPE_DATA", ROOT / "data"))
+SHARED = DATA / "shared"
 RESEARCH = ("article", "preprint", "conference-paper", "proceedings-article")
 THR = 0.894
 DIM = 256
 
 
 def _project(run: str, *parts: str) -> Path:
-    p = ROOT.joinpath("data", "projects", run, *parts)
+    from urllib.parse import quote
+
+    seg = quote(run.split("@", 1)[0], safe="")
+    p = DATA.joinpath("projects", seg if seg not in ("", ".", "..") else "run-" + seg, *parts)
     p.mkdir(parents=True, exist_ok=True)
     return p
 
