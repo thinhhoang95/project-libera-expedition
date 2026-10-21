@@ -1,0 +1,9 @@
+{
+  "expansion": {
+    "paper_budget": 8000,
+    "forward_years": 8,
+    "route_caps": {"back": 2000, "forward": 3500, "author": 2000, "semantic": 1500},
+    "max_authors": 150,
+    "semantic_candidates_per_topic": 250
+  }
+}

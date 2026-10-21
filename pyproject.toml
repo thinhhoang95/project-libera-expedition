@@ -1,0 +1,39 @@
+[project]
+name = "landscape"
+version = "0.1.0"
+description = "Research Landscape Engine: seed paper to evidence-backed field map"
+readme = "README.md"
+authors = [
+    { name = "Thinh Hoang", email = "thinhhoangdinh95@hotmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "duckdb>=1.5.6",
+    "faiss-cpu>=1.15.1",
+    "httpx>=0.28.1",
+    "leidenalg>=0.12.0",
+    "numpy>=2.5.4",
+    "pandas>=3.0.6",
+    "pillow>=10",
+    "plotly>=7.1.0",
+    "pyarrow>=26.0.0",
+    "python-dotenv>=1.2.4",
+    "python-igraph>=1.0.0",
+    "scikit-learn>=1.9.1",
+    "scipy>=1.18.1",
+    "sentence-transformers>=6.1.0",
+    "streamlit>=1.66",
+    "tenacity>=9.2.1",
+    "torch>=2.14.1",
+    "torchvision>=0.29.1",
+    "tqdm>=4.70.1",
+    "transformers>=5.20.2",
+    "umap-learn>=0.5.12",
+]
+
+[project.scripts]
+landscape = "landscape.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
