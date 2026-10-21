@@ -11,6 +11,9 @@
         lasting.parquet         per paper: breadth at publication (how many communities' earlier work is already close
                                 to its idea) and a "lasting" flag = top third of breadth among equally generic ideas
                                 (experiment 14)
+        survey_gaps.parquet     per community: its share of surveys over the last three complete years against the
+                                field's, a status (survey gap / thin / covered) and its latest and most cited surveys
+                                (experiment 15: a survey written where surveys are scarce is taken up far more)
 
 Self-contained on purpose: it reads the data layout directly (<data>/shared/ for the database and vectors,
 <data>/projects/<project>/ for per-run files, <data> = LANDSCAPE_DATA or ./data, as config.py), so it does not
@@ -267,6 +270,50 @@ def _entry_effects(run: str) -> dict:
                           "adjusted rate, core incremental"]].to_dict("records")}
 
 
+# ------------------------------------------------------------------ "survey gap" (experiment 15)
+
+SURVEY_EVIDENCE = ("Experiment 15: where a community's share of surveys was under half the field's, a new survey was taken "
+                   "up by others far more often than surveys elsewhere (47% vs 10% in the top quarter, +0.38 "
+                   "[+0.16, +0.54]); the effect grows the scarcer surveys are. Surveys are cited rather than built on.")
+
+
+def survey_gaps(f: _Field, con, min_recent: int = 10) -> pd.DataFrame:
+    """Per community: is a survey missing? Status from the community's survey share over the last three complete
+    years against the field's: survey gap (< 0.5x), thin (< 0.75x), covered; communities with fewer than
+    `min_recent` labelled recent papers are not judged."""
+    T = f.t_live
+    ct = con.execute("SELECT paper_id, text FROM facets WHERE facet = 'contribution_type'").df() \
+        .drop_duplicates("paper_id").set_index("paper_id").text
+    lab = f.lab[f.lab.index.isin(ct.index)]
+    yr = lab.index.map(f.year)
+    recent = lab[(yr >= T - 2) & (yr <= T)]
+    field_share = float((ct.reindex(recent.index) == "survey").mean()) if len(recent) else np.nan
+    surveys = set(ct[ct == "survey"].index)
+    rows = []
+    for X in sorted(set(f.lab)):
+        r = recent.index[recent.values == X]
+        n = len(r)
+        share = float(np.mean([x in surveys for x in r])) if n else np.nan
+        ratio = share / field_share if n and field_share else np.nan
+        status = ("not judged" if n < min_recent else "survey gap" if ratio < 0.5 else "thin" if ratio < 0.75
+                  else "covered")
+        mem = f.lab.index[f.lab.values == X]
+        own = sorted((x for x in mem if x in surveys and f.year.get(x, 9999) <= T), key=lambda x: -f.year[x])
+        cited = f.refs_in[f.refs_in.citing_id.isin(set(mem)) & f.refs_in.cited_id.isin(surveys)]
+        top = cited.groupby("cited_id").size().sort_values(ascending=False)
+        top_id = top.index[0] if len(top) else None
+        rows.append({"cluster_id": X, "label": f.labels.get(X, X), "recent_papers": n, "survey_share": share,
+                     "field_survey_share": field_share, "ratio_to_field": ratio, "status": status,
+                     "recent_surveys": int(sum(x in surveys for x in r)),
+                     "latest_survey_id": own[0] if own else None, "latest_survey_title": f.title.get(own[0]) if own else None,
+                     "latest_survey_year": int(f.year[own[0]]) if own else None,
+                     "most_cited_survey_id": top_id, "most_cited_survey_title": f.title.get(top_id) if top_id else None,
+                     "most_cited_survey_year": int(f.year[top_id]) if top_id in f.year.index else None,
+                     "most_cited_survey_cites_here": int(top.iloc[0]) if len(top) else 0,
+                     "window": f"{T - 2}-{T}", "evidence": SURVEY_EVIDENCE})
+    return pd.DataFrame(rows).assign(as_of=T)
+
+
 # ------------------------------------------------------------------ build
 
 def build_orientation(run: str, db_path: str | None = None) -> dict:
@@ -280,10 +327,13 @@ def build_orientation(run: str, db_path: str | None = None) -> dict:
     E = entry_routes(f)
     E.to_parquet(out / "entry_routes.parquet", index=False)
     (out / "entry_effects.json").write_text(json.dumps(_entry_effects(run), indent=2, default=float) + "\n")
+    G = survey_gaps(f, con)
+    G.to_parquet(out / "survey_gaps.parquet", index=False)
     stats = {"as_of": f.t_live, "built_at": datetime.now().isoformat(timespec="seconds"),
              "lasting_papers": int(L.lasting.sum()), "papers_scored": len(L),
              "reading_paths": int(P.cluster_id.nunique()), "entry_rows": len(E),
-             "entries_with_outcomes": int(E.entries.sum()), "outcome_year": f.t_live - 3}
+             "entries_with_outcomes": int(E.entries.sum()), "outcome_year": f.t_live - 3,
+             "survey_gaps": int((G.status == "survey gap").sum()), "survey_thin": int((G.status == "thin").sum())}
     (out / "orientation_summary.json").write_text(json.dumps(stats, indent=2) + "\n")
     return stats
 
