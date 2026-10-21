@@ -280,6 +280,167 @@ Closeness of wording does not certify an answer, so open versus closed cannot be
 
 Scripts: `exp15_lifecycle.py` (~8 s), `exp16_open_questions.py` (~20 s).
 
+## 17. Quiet foundations: papers people build on but rarely cite
+
+**Question.** Experiment 9 found most real uptake is uncited. Which papers are the hidden sources of later work, and
+do they stay that way?
+
+**Setup.**
+- **Candidates:** for each cutoff T (2019-2022), papers published up to T−2 (5,051 paper-cutoffs).
+- **Quiet reuse:** papers by other authors, up to T, whose method or innovation is within 0.894 of the paper's
+  innovation, and which do not cite it.
+- **Attributed:** stricter. The paper is credited only when it is the *earliest* close source of a later statement,
+  as in the reading paths' method lineage.
+- **Outcomes in T+1…T+3:**
+  - still reused by at least 3 papers (base 44%);
+  - still the earliest source of at least 2 (base 14%).
+
+**Comparison.** Rankings are compared among papers of similar genericness (generic ideas look used everywhere),
+similar prior density (how busy the area already was: busy areas stay busy) and the same citation bucket.
+
+| Ranking | Still reused by ≥ 3 | Still the earliest source of ≥ 2 |
+| --- | --- | --- |
+| quiet reuse | **0.91** [0.90, 0.92] | 0.75 [0.73, 0.78] |
+| attributed, uncited | 0.64 [0.62, 0.67] | **0.83** [0.80, 0.85] |
+| attributed (all) | 0.65 | **0.84** [0.82, 0.86] |
+| citations by others | 0.52 [0.50, 0.55] | 0.51 [0.49, 0.55] |
+
+**Quiet foundations** = top tenth of quiet reuse among equally generic papers, with at least 3 quiet reuses (508
+paper-cutoffs):
+- 89% are still built on in the next three years, against 41% of papers with the same genericness and citations;
+- **40% are not among their community's 50 most cited papers.**
+
+**What it says:**
+1. **Being the uncited source of later work is a stable property, and citations do not show it.** Among papers with
+   the same citation count, citations do not separate future sources from the rest; attributed reuse does (0.83).
+2. **A reading list ranked by citations misses about two in five of the papers the field actually keeps building
+   on.** That is a strong case for adding quiet foundations to *Read this first*.
+
+**Limits:**
+- "Reuse" is closeness of wording within the map; the genericness and density controls remove the obvious
+  artefacts, but not every one.
+- Three-year outcomes.
+
+## 18. Structural twins: same mathematical structure, different application
+
+**Question.** Do communities whose problems share the same textbook *structure* (problem glosses), but serve
+different applications (domain facet), converge in content more than their topic similarity predicts?
+
+**Setup.** Pairs of problem communities at each cutoff (2019-2022; 693 pair-cutoffs). Outcome: the share of each
+community's papers in T+1…T+3 whose method or innovation is within 0.894 of the other's innovations, top quarter
+= hit. Controls: topic similarity, application similarity, existing citations, prior convergence, size.
+
+| Measure | Value | 90% CI |
+| --- | --- | --- |
+| partial ρ, structure with later convergence | +0.04 | [−0.02, +0.11] |
+| partial ρ, topic | **+0.25** | [+0.18, +0.31] |
+| partial ρ, application | **−0.09** | [−0.16, −0.03] |
+| AUC gain of structure over everything else (leave one cutoff out) | +0.002 | [−0.002, +0.007] |
+
+**What it says:**
+- **Not supported at the community level.** Shared structure adds nothing beyond topic; DRO's communities share much
+  of their mathematical vocabulary, so their glosses barely differ.
+- **One real nuance:** for the same topic, communities with *different* applications converge slightly more. "Same
+  problem, other application areas" is a pattern; a more abstract "same structure" is not, here.
+- Only 21 twin pairs (top-quarter structure, below-median application): too few to read on their own.
+
+## 19. Applications not yet tried
+
+**Question.** Experiment 4's recipe on problem community × application domain (15 clusters of the domain
+statements up to T). Which empty cells get at least 2 papers in the next three years?
+
+| Ranking (no fitting on outcomes) | AUC | p@20 (base 5.6%) |
+| --- | --- | --- |
+| **semantic fit** (problem community centroid vs domain centroid) | **0.81** | **15%** |
+| item CF + semantic fit (rank average) | 0.77 | 10% |
+| item CF (experiment 4's recipe) | 0.66 | 10% |
+| neighbour share | 0.55 | 11% |
+| popularity | 0.53 | 7.5% |
+
+**What it says:**
+- Plain semantic fit between a problem and an application finds the cells that fill, better than co-usage (unlike
+  methods, experiment 4).
+- **Small sample:** 24 filled cells over four cutoffs (11, 8, 4, 1). Read as promising, not settled.
+
+## 20. Tools to learn vs methods in flux
+
+**Traits** of each method community at T (2019-2022; 77 community-cutoffs):
+- **breadth:** problem communities using it;
+- **dispersion:** how varied its recent variants are;
+- **inward:** the share of its papers innovating on the method itself.
+
+The **stable score** is breadth minus dispersion minus inward (standardized).
+
+| Trait | Its share sustained in T+1…T+3 (ρ) | Spread to new problems (ρ) |
+| --- | --- | --- |
+| breadth | **+0.19** [+0.02, +0.37] | −0.18 [−0.36, +0.01] |
+| dispersion | −0.14 [−0.33, +0.05] | −0.04 |
+| inward | −0.08 | −0.19 [−0.37, 0.00] |
+| momentum | **+0.32** [+0.12, +0.49] | +0.13 |
+| **stable score** | **+0.22** [+0.04, +0.39] | +0.04 |
+
+**Entries** (experiment 12's 6,585 entries, with its controls), comparing a stable tool (75th percentile of the
+score) with a less stable one (25th):
+- newcomers stayed more: **+3.0 points** [+1.9, +4.2];
+- they were taken up more: **+6.2 points** [+3.1, +8.8].
+
+**What it says:** broadly used, settled tools keep their place, and newcomers who entered with them fared better.
+This is a reasonable "learn these" list.
+
+## 21. Gateway reads: papers whose readers join their community
+
+**Setup.**
+- **Outsider citer:** an author citing a paper from a community they have not published in. They *entered* if they
+  publish there later.
+- **Gateway score:** a paper's outsider citers' entry rate in 2018-2020 (known in 2021).
+- **Test:** new outsider citers in 2021-2022, with entries through 2025; 16,999 citers, 10.5% entered.
+
+| Score | Paper level: ρ with new citers' entry rate (629 papers) | Reader level: AUC for "this reader entered" |
+| --- | --- | --- |
+| gateway | +0.12 [+0.05, +0.18] | 0.63 |
+| popularity | **+0.20** [+0.14, +0.26] | 0.42 |
+| community size | +0.17 | 0.57 |
+| gateway, within the same community and popularity tercile | — | **0.535** [0.51, 0.55] |
+
+**What it says:** weak. Readers of a high-gateway paper join more often (0.63), but most of that comes from *which*
+community and how popular the paper is. Like for like, the gateway effect is small (0.53). Readers of very popular
+papers join *less*, because everyone reads them. Not product-grade on this corpus.
+
+## 22. How the question is being asked now
+
+**Measure.** For an entry (experiment 12's entries, 2020-2022), **currency** = how much closer its problem statement is to
+the community's formulation of the last two years than to that of three to four years earlier.
+
+**Result.** No effect on any outcome:
+- stayed: −0.4 points [−2.0, +1.1];
+- taken up: +0.8 [−0.9, +2.6];
+- community moved towards it: +1.7 [−1.1, +3.7].
+
+Asking the question "the current way" does not help on this corpus. (A first run printed zeros because the measure's
+tiny scale was shrunk away by the regularized model; it is standardized now.)
+
+## 23. Crowding vs demand
+
+For each entry, counting papers by other authors:
+- **same question:** papers from T−2…T posing the same question;
+- **near duplicate:** of those, the ones also using the same method (42% of entries have one);
+- **demand:** stated limitations the entry's innovation answers (55% have one).
+
+The thresholds are the 99th percentiles of random pairs.
+
+| Measure (adjusted, experiment 12's controls) | Stayed | Taken up by others | Community moved towards it |
+| --- | --- | --- | --- |
+| same question, 75th vs 25th percentile | −0.3 [−1.1, +0.3] | **+2.7** [+1.9, +3.6] | +1.7 [0.0, +3.2] |
+| near duplicate present | +1.7 [−0.7, +4.1] | **+9.5** [+6.3, +12.5] | **+4.8** [+0.6, +8.5] |
+| demand present | +0.3 [−2.1, +2.8] | +1.4 [−1.0, +4.3] | **+5.4** [+1.3, +9.0] |
+
+**What it says:**
+- **Crowding is not a penalty here; it marks attention.** Entries into areas where others are posing the same
+  question, even with the same method, are taken up more.
+- **Answering a stated limitation pays off in content, not citations:** the community's later work moves towards the
+  entry.
+- The "too crowded" worry is not supported over three years. A long-run scooping effect cannot be measured here.
+
 ## In the product portfolio
 
 `src/landscape/orientation.py` turns the results into artefacts, written next to the other portfolio files
