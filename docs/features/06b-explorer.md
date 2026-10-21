@@ -96,6 +96,17 @@ There is one map, one grid and one time axis, as in the recipe.
 The accent colour (`#e8590c`) is used only for the selection, the window/playhead and new
 grid cells.
 
+### Experiments (Phase 8 / 8b)
+
+Every experiment's saved result tables for the selected run: the Phase 8 backtest summary and the
+Phase 8b experiments, including the ones the pilot dropped. Each table has a short how-to-read
+note and its re-run command, and long tables have filters (outcome, population, level, hit
+definition). The pilot's decisions are listed for reference only, because results depend on the
+corpus. Code: `src/landscape/experiments_view.py`; data: `data/backtest/<run>/experiments/`.
+
+The Phase 8b panels in Map & grid (Papers to bring in, Early work, Rising pockets) each have a
+"How to read this" note.
+
 ### Corpus view (Phase 2)
 
 Shows papers, missing-abstract rate and spend, plus papers per year stacked by entry route

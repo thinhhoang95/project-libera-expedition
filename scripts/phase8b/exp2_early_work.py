@@ -3,7 +3,8 @@ their year for corpus citations received in T+1..T+3? Only information available
 
 Robustness: the forward and semantic routes selected papers by their 2026 citation count, which
 leaks the future into who is in the corpus. Results are also reported on author-route papers only
-(taken newest-first, with no citation filter)."""
+(taken newest-first, with no citation filter). Usage: --run-id (default dro-pilot); tables are saved to
+data/backtest/<run>/experiments/ (explorer: Experiments view)."""
 import json
 
 import numpy as np
@@ -13,11 +14,11 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import StandardScaler
 
-from landscape import store
+from landscape import experiments, store
 from landscape.cli import _params
 
-BASE = "dro-pilot"
-con = store.connect()
+BASE = experiments.run_arg()
+con = store.connect(read_only=True)
 p = _params(con, BASE)
 papers = con.execute("""SELECT v.paper_id, v.route, p.year FROM provenance v JOIN papers p USING (paper_id)
                         WHERE v.run_id = ?""", [BASE]).df()
@@ -85,10 +86,11 @@ for c in ["cites_so_far", "coupling", "n_refs", "author_prom", "author_papers", 
 for c in ["cluster_E", "centrality", "novelty"]:
     df[c] = df[c].astype(float).fillna(df[c].astype(float).median())
 df[["survey", "theory", "quant"]] = df[["survey", "theory", "quant"]].astype(float)
-df.to_parquet("data/backtest/exp2_papers.parquet")
+df.to_parquet(experiments.work_dir(BASE) / "exp2_papers.parquet")
 FEATS = ["l_cites_so_far", "l_coupling", "l_n_refs", "cluster_E", "centrality", "novelty", "l_author_prom",
          "l_author_papers", "l_n_authors", "survey", "theory", "quant"]
 NO_AUTH = [f for f in FEATS if not f.startswith("l_author")]
+coefs = []
 for name, feats in (("logit (all)", FEATS), ("logit (no author fame)", NO_AUTH)):
     df[name] = np.nan
     for T in df["T"].unique():
@@ -97,6 +99,7 @@ for name, feats in (("logit (all)", FEATS), ("logit (no author fame)", NO_AUTH))
         m = LogisticRegression(max_iter=2000, class_weight="balanced").fit(s.transform(df.loc[tr, feats]), df.loc[tr, "hit"])
         df.loc[te, name] = m.decision_function(s.transform(df.loc[te, feats]))
     print(name, "coefficients (last fold):", dict(zip(feats, np.round(m.coef_[0], 2))))
+    coefs += [{"model": name, "feature": f, "coefficient": float(c)} for f, c in zip(feats, m.coef_[0])]
 
 
 def report(d, label):
@@ -107,7 +110,17 @@ def report(d, label):
         out.append({"ranking": name, "AUC": roc_auc_score(d.hit, d[name]), "p@50": pk})
     print(f"== {label}: {len(d)} papers, base rate {d.hit.mean():.3f}")
     print(pd.DataFrame(out).round(3).to_string(index=False))
+    return pd.DataFrame(out).assign(population=label, papers=len(d), base_rate=d.hit.mean())
 
 
-report(df, "all routes")
-report(df[df.route == "author"], "author route only (no citation-based selection)")
+tab = pd.concat([report(df, "all routes"),
+                 report(df[df.route == "author"], "author route only (no citation-based selection)")])
+experiments.save(BASE, "exp2_early_work", "rankings", tab, title="Early-work detector: rankings",
+                 how_to_read="Papers published in year T; a hit is landing in the top quarter of that year for "
+                 "corpus citations received in T+1..T+3. **AUC** is how well a ranking separates hits from the rest "
+                 "(0.5 = chance); **p@50** the hit share among the top 50 per cutoff, to compare with **base_rate**. "
+                 "Single features are shown next to the two leave-one-cutoff-out models. The author-route rows "
+                 "are papers chosen without any citation filter: a check against selection bias, but small.")
+experiments.save(BASE, "exp2_early_work", "coefficients", pd.DataFrame(coefs), title="Early-work detector: model weights",
+                 how_to_read="Standardized logistic coefficients (last fold). Negative novelty means novel papers "
+                 "draw fewer in-field citations in the first three years.")

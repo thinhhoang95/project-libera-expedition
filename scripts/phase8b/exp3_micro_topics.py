@@ -4,6 +4,7 @@ For each paper x published in T-1..T: its k nearest neighbours among papers <= T
 256-d). Burstiness = share of those neighbours published in T-1..T. Outcome: the local ball
 (radius = similarity to the k-th neighbour) - share of T+1..T+3 papers inside it versus the share of
 T-2..T papers inside it. Compared with the paper's cluster-level E', its citations, and random.
+Usage: --run-id (default dro-pilot); tables are saved to data/backtest/<run>/experiments/.
 """
 import json
 
@@ -12,11 +13,11 @@ import pandas as pd
 from scipy.stats import spearmanr
 from sklearn.metrics import roc_auc_score
 
-from landscape import embed, store
+from landscape import embed, experiments, store
 from landscape.cli import _params
 
-BASE, K = "dro-pilot", 15
-con = store.connect()
+BASE, K = experiments.run_arg(), 15
+con = store.connect(read_only=True)
 p = _params(con, BASE)
 papers = con.execute("""SELECT v.paper_id, v.route, p.year FROM provenance v JOIN papers p USING (paper_id)
                         WHERE v.run_id = ?""", [BASE]).df()
@@ -55,7 +56,7 @@ for T in (2020, 2021, 2022, 2023):
 df = pd.DataFrame(rows)
 df["cluster_E"] = df.cluster_E.astype(float)
 df["hit"] = df.growth >= np.log(1.5)
-df.to_parquet("data/backtest/exp3_pockets.parquet")
+df.to_parquet(experiments.work_dir(BASE) / "exp3_pockets.parquet")
 print(f"{len(df)} recent papers, hit rate (local share x1.5) {df.hit.mean():.3f}")
 out = []
 for name in ["burst", "cluster_E", "cites", "radius"]:
@@ -80,5 +81,13 @@ for T in (2020, 2021, 2022, 2023):
     rows2.append(pd.DataFrame({"T": T, "paper_id": [ids[k] for k in recent], "local_momentum": mom}))
 d2 = df.merge(pd.concat(rows2), on=["T", "paper_id"])
 rho = np.mean([spearmanr(g.local_momentum, g.growth).statistic for _, g in d2.groupby("T")])
-print(f"local momentum: rho {rho:.3f}, AUC {roc_auc_score(d2.hit, d2.local_momentum):.3f}, "
-      f"p@50 {np.mean([g.nlargest(50, 'local_momentum').hit.mean() for _, g in d2.groupby('T')]):.3f}")
+lm = {"ranking": "local momentum", "rho with local growth": rho, "AUC": roc_auc_score(d2.hit, d2.local_momentum),
+      "p@50": np.mean([g.nlargest(50, "local_momentum").hit.mean() for _, g in d2.groupby("T")])}
+print(f"local momentum: rho {lm['rho with local growth']:.3f}, AUC {lm['AUC']:.3f}, p@50 {lm['p@50']:.3f}")
+experiments.save(BASE, "exp3_micro_topics", "rankings", pd.DataFrame(out + [lm]).assign(papers=len(df), hit_rate=df.hit.mean()),
+                 title="Micro-topics: burstiness vs local momentum",
+                 how_to_read="For each recent paper, the ball around its 15 nearest earlier neighbours. A hit is "
+                 "the share of the next three years' papers inside the ball reaching 1.5x the share of the last "
+                 "three years'. **rho** is the rank correlation with that local growth. **burst** (how many "
+                 "neighbours are recent) is the dropped idea; **local momentum** (this year's share vs last "
+                 "year's) is the one behind the explorer's Rising pockets.")

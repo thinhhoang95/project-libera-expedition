@@ -14,7 +14,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import StandardScaler
 
-df = pd.read_parquet("data/backtest/exp5_papers.parquet")
+from landscape import experiments
+
+RUN = experiments.run_arg()
+df = pd.read_parquet(experiments.work_dir(RUN) / "exp5_papers.parquet")
 for c in ("cites_so_far", "coupling", "n_refs", "n_authors", "q_breadth", "a_n_prior", "v_n_prior", "x_n_rising", "x_n_fresh",
           "g_cites_so_far", "ga_c_cum", "ga_c_rec", "ga_w_cum", "ga_rate"):
     df["l_" + c] = np.log1p(df[c].astype(float))
@@ -109,6 +112,8 @@ def run(d, y, label, kind="logit"):
         res.append({"model": m, "AUC": auc, "gain vs base": auc - roc_auc_score(yv, base),
                     "gain 90% CI": f"[{lo:+.3f}, {hi:+.3f}]", "p@50": p_at(d, "_s", y)})
     print(pd.DataFrame(res).round(3).to_string(index=False))
+    meta = dict(outcome=y, population=label, model_kind=kind, papers=len(d), base_rate=d[y].mean())
+    models.append(pd.DataFrame(res).assign(**meta))
     if kind == "logit":
         uni = []
         for fam, fs in FAM.items():
@@ -120,13 +125,37 @@ def run(d, y, label, kind="logit"):
         u = pd.DataFrame(uni)
         u["|edge|"] = (u["AUC within base deciles"] - 0.5).abs()
         print(u.sort_values("|edge|", ascending=False).drop(columns="|edge|").round(3).to_string(index=False))
+        features.append(u.drop(columns="|edge|").assign(**meta))
 
 
 kinds = [a for a in sys.argv[1:] if a in ("logit", "hgb")] or ["logit"]
-OUTCOMES = [a for a in sys.argv[1:] if a.startswith("y_")] or ["y_g3_field", "y_g3_peer", "y_corpus_peer_ns"]
+OUTCOMES = [a for a in sys.argv[1:] if a.startswith("y_")] or [
+    "y_corpus", "y_corpus_peer", "y_corpus_peer_ns", "y_global", "y_field", "y_peer", "y_g3", "y_g3_field", "y_g3_peer"]
+models, features = [], []
 for kind in kinds:
     for y in OUTCOMES:
         run(df, y, "all routes", kind)
         run(df[df.route == "forward"], y, "forward route only", kind)
         run(df[df.cites_so_far == 0], y, "cold start (no corpus citations at T)", kind)
         run(df[df.g_cites_so_far == 0], y, "global cold start (no citations anywhere at T)", kind)
+
+OUTCOME_NOTES = (
+    "Outcomes (all: top quarter of papers from the same year T): **y_corpus** citations from corpus papers in "
+    "T+1..T+3; **y_corpus_peer** the same relative to the 15 most similar same-year papers; **y_corpus_peer_ns** "
+    "that without self-citations (the strictest in-field test); **y_global** OpenAlex citations as of 2026; "
+    "**y_field** that relative to the paper's subfield; **y_peer** relative to its 15 most similar same-year "
+    "papers; **y_g3**, **y_g3_field**, **y_g3_peer** the same three with global citations received in T+1..T+3 only.")
+for kind in kinds:
+    experiments.save(RUN, "exp5_beyond_rich_get_richer", f"models_{kind}", pd.concat(models).query("model_kind == @kind"),
+                     title=f"Topic, question, credibility and imports: models ({kind})",
+                     how_to_read="Each row adds one feature family to the bibliometric **base** model (citations so "
+                     "far, coupling, references, team size, preprint, route) and scores it leave-one-cutoff-out. "
+                     "**gain vs base** is the AUC difference; the **90% CI** comes from a paired bootstrap, so a gain "
+                     "whose interval stays above zero is a real improvement on this corpus. Pick an outcome and a "
+                     "population: *forward route only* removes most route effects, *cold start* keeps papers with "
+                     "no corpus citations at T, *global cold start* those uncited anywhere. " + OUTCOME_NOTES)
+experiments.save(RUN, "exp5_beyond_rich_get_richer", "features", pd.concat(features),
+                 title="Topic, question, credibility and imports: single features",
+                 how_to_read="**AUC alone** ranks papers by the feature by itself (below 0.5 means the feature points "
+                 "the other way). **AUC within base deciles** compares papers the base model scores alike: values "
+                 "away from 0.5 are what the feature adds beyond rich-get-richer. " + OUTCOME_NOTES)

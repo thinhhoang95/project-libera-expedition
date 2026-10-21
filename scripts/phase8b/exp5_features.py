@@ -16,7 +16,8 @@ from data available at T only, in five families:
 
 Outcomes: y_corpus = top quartile of corpus citations received in T+1..T+3 (as in exp2); y_global =
 top quartile of OpenAlex cited_by_count (2026) within the publication year. Duplicate records
-(same normalized title) are collapsed first. Writes data/backtest/exp5_papers.parquet.
+(same normalized title) are collapsed first. Writes data/backtest/<run>/exp5_papers.parquet. Usage:
+--run-id (default dro-pilot); needs fetch_counts_by_year.py first.
 """
 import re
 
@@ -24,10 +25,10 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 
-from landscape import embed, store
+from landscape import embed, experiments, store
 from landscape.cli import _params
 
-BASE = "dro-pilot"
+BASE = experiments.run_arg()
 CUTOFFS = (2020, 2021, 2022, 2023)
 K = 20
 con = store.connect(read_only=True)
@@ -79,9 +80,10 @@ V = {f: vecs(f) for f in ("abstract", "problem", "method", "innovation", "limita
 
 # time-sliced global counts (scripts/phase8b/fetch_counts_by_year.py): citations a work received in
 # each year, and citations / new works per author per year. "As of T" = years <= T only.
-wc = pd.read_parquet("data/backtest/oa_work_counts.parquet").pivot_table(
+WORK = experiments.work_dir(BASE)
+wc = pd.read_parquet(WORK / "oa_work_counts.parquet").pivot_table(
     index="paper_id", columns="year", values="cites", aggfunc="sum").fillna(0)
-ac = pd.read_parquet("data/backtest/oa_author_counts.parquet")
+ac = pd.read_parquet(WORK / "oa_author_counts.parquet")
 ac = ac[(ac.year >= 2010) & (ac.year <= 2026)]
 acc = ac.pivot_table(index="author_id", columns="year", values="cites", aggfunc="sum").fillna(0)
 acw = ac.pivot_table(index="author_id", columns="year", values="works", aggfunc="sum").fillna(0)
@@ -325,6 +327,6 @@ for c, y in (("g_field_rel", "y_field"), ("g_peer_rel", "y_peer"), ("c_peer_rel"
 df["y_corpus"] = df.fut_corpus > df.groupby("T").fut_corpus.transform(lambda s: s.quantile(0.75))
 df["y_global"] = df.gcites > df.groupby("T").gcites.transform(lambda s: s.quantile(0.75))
 df.attrs["dups_dropped"] = dups_dropped
-df.to_parquet("data/backtest/exp5_papers.parquet")
+df.to_parquet(WORK / "exp5_papers.parquet")
 print(f"{len(df)} papers; {dups_dropped} duplicate records collapsed")
 print(df.describe().T.round(3).to_string())

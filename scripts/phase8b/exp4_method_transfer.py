@@ -3,17 +3,18 @@
 Empty cells at T; hit = the cell gets >= 1 (and, stricter, >= 2) papers in T+1..T+3. Scores:
 recipe-style neighbour indicator, item-based collaborative filtering, low-rank SVD completion,
 and a popularity baseline. Unsupervised, so no fitting on the test cutoff.
+Usage: --run-id (default dro-pilot); tables are saved to data/backtest/<run>/experiments/.
 """
 import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score
 
-from landscape import store
+from landscape import experiments, store
 from landscape.backtest import Assigner
 from landscape.cli import _params
 
-BASE = "dro-pilot"
-con = store.connect()
+BASE = experiments.run_arg()
+con = store.connect(read_only=True)
 p = _params(con, BASE)
 papers = con.execute("""SELECT v.paper_id, p.year FROM provenance v JOIN papers p USING (paper_id)
                         WHERE v.run_id = ?""", [BASE]).df()
@@ -107,4 +108,12 @@ for T in (2020, 2021, 2022, 2023):
 r = pd.concat([evaluate("tags", tag_data), evaluate("clusters (alpha 0.5)", cl_data)])
 pd.set_option("display.width", 200)
 print(r.groupby(["level", "hit", "ranking"])[["AUC", "p@50", "base", "n_hits", "n_empty"]].mean().round(3).to_string())
-r.to_parquet("data/backtest/exp4_transfer.parquet")
+r.to_parquet(experiments.work_dir(BASE) / "exp4_transfer.parquet")
+experiments.save(BASE, "exp4_method_transfer", "rankings",
+                 r.groupby(["level", "hit", "ranking"])[["AUC", "p@50", "base", "n_hits", "n_empty"]].mean().reset_index(),
+                 title="Method transfer as matrix completion",
+                 how_to_read="Empty problem x method cells at cutoff T; a hit is the cell receiving at least 1 (or, "
+                 "the recipe's definition, at least 2) papers in T+1..T+3. Numbers are averaged over cutoffs. "
+                 "**base** is the hit rate among empty cells, the p@50 of a random ranking; **n_hits** shows how "
+                 "few hits there are, so p@50 gaps of a few points are one hit or less. Cluster level uses the "
+                 "alpha 0.5 medium clusters; tag level the extracted problem_class x method_family tags.")

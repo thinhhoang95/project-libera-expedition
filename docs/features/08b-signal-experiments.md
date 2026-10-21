@@ -9,8 +9,15 @@ cutoffs 2020–2023, score the fourth, repeat), on the existing corpus only (no 
 
 ## Run
 
-All scripts read the cutoff runs `dro-pilot@T2020..2023`, which `landscape backtest` builds.
-Each runs in seconds and costs nothing (no LLM calls).
+All scripts take `--run-id` (default `dro-pilot`) and read the cutoff runs `<run>@T2020..2023`,
+which `landscape backtest --run-id <run>` builds. Each runs in seconds to minutes and costs nothing
+(no LLM calls). Intermediate tables go to `data/backtest/<run>/`.
+
+**Every result table is saved, adopted or not**, to `data/backtest/<run>/experiments/` (with an
+`index.json` of titles and how-to-read notes) by `src/landscape/experiments.py`. The explorer's
+**Experiments** view shows them all for the selected run, together with the Phase 8 backtest
+summary. These results describe one corpus: another field may give different answers, so a
+signal dropped on the pilot stays visible and re-runnable.
 
 ```bash
 uv run python scripts/phase8b/exp1_paper_bridges.py   # writes data/backtest/exp1_pairs.parquet

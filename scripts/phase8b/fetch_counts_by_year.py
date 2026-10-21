@@ -3,17 +3,17 @@
 Yearly counts make "as of T" measurements possible without leaking the future: a work's global
 citations received in each year, and an author's global citations received and works published in
 each year. OpenAlex keeps the last ten years. Responses are cached under data/raw/openalex/
-{work_counts,author_counts}/ and written to data/backtest/oa_{work,author}_counts.parquet. The calls
+{work_counts,author_counts}/ and written to data/backtest/<run>/oa_{work,author}_counts.parquet. The calls
 are logged in api_calls under the base run.
 """
 import asyncio
 
 import pandas as pd
 
-from landscape import store
+from landscape import experiments, store
 from landscape.clients import Budget, OpenAlex, short_id
 
-BASE = "dro-pilot"
+BASE = experiments.run_arg()
 
 
 async def fetch(oa, path, kind, ids, select):
@@ -58,8 +58,8 @@ async def main():
           for k, r in w.items() for c in r.get("counts_by_year") or []]
     ar = [{"author_id": k, "year": c["year"], "cites": c.get("cited_by_count", 0), "works": c.get("works_count", 0)}
           for k, r in a.items() for c in r.get("counts_by_year") or []]
-    pd.DataFrame(wr).to_parquet("data/backtest/oa_work_counts.parquet")
-    pd.DataFrame(ar).to_parquet("data/backtest/oa_author_counts.parquet")
+    pd.DataFrame(wr).to_parquet(experiments.work_dir(BASE) / "oa_work_counts.parquet")
+    pd.DataFrame(ar).to_parquet(experiments.work_dir(BASE) / "oa_author_counts.parquet")
     print(f"{len(wr)} work-year rows, {len(ar)} author-year rows")
 
 

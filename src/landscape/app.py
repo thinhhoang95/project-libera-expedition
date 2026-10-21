@@ -94,7 +94,7 @@ if not runs:
     st.stop()
 with st.sidebar:
     st.session_state.run_id = st.selectbox("Run", runs)
-    view = st.radio("View", ["Map & grid", "Corpus view", "Facet review", "Cluster review"])
+    view = st.radio("View", ["Map & grid", "Experiments", "Corpus view", "Facet review", "Cluster review"])
     st.session_state.reviewer = st.text_input("Reviewer", value=st.session_state.get("reviewer", ""),
                                               placeholder="your name (stored with every judgment)")
 RUN = st.session_state.run_id
@@ -296,6 +296,11 @@ def view_map():
                     marker=dict(size=13, symbol="circle-open", color=FLOW_UP, line=dict(width=2)),
                     text=[f"rising pocket: local momentum {v:.2f}<br>{t[:80]}" for v, t in zip(w.value, w.title.fillna(""))],
                     hovertemplate="%{text}<extra></extra>", name="pockets"))
+                st.caption("Rising pockets (green rings): recent papers whose closest earlier neighbours are "
+                           "filling up with this year's papers faster than last year's (top 5%). Read them as "
+                           "\"this small neighbourhood is getting busier\", a place to look rather than a "
+                           "forecast: in the backtest they are about twice as good as random. A paper "
+                           "recorded twice in OpenAlex can make a false pocket.")
             else:
                 st.caption("Rising pockets mark papers from the last two years: move the window to the end.")
 
@@ -628,11 +633,29 @@ def bridges_panel():
             st.success("Saved to review_actions.")
 
 
+def how_to_read(text: str) -> None:
+    with st.expander("How to read this"):
+        st.markdown(text)
+
+
 def paper_bridges_panel(sel):
     b = signals_df(("bridge_paper", "bridge_paper_gem"))
     if b.empty:
         st.info("No paper bridges. Run `landscape signals`.")
         return
+    how_to_read(
+        "Pick a problem cluster. Each row is an **innovation paper from another cluster that no paper here "
+        "cites yet**, ranked by how likely this cluster is to start citing it in the next three years.\n\n"
+        "- **Likely to be brought in**: the top 10. About 1 in 4 is picked up within three years in the "
+        "backtest (popularity alone: about 1 in 5). Many will already be familiar.\n"
+        "- **Hidden gems**: papers cited at most once so far. Fewer are picked up, but popularity can't find "
+        "them at all; this is where the list earns its keep.\n"
+        "- **from** is the paper's own cluster, **cites** its corpus citations so far, and **score** the model's "
+        "log-odds. Compare scores within one list only.\n"
+        "- **Select a row** to see the innovation next to this cluster's closest stated limitation. Mark "
+        "*wrong* if they don't connect, and *obvious* if everyone in the field already knows it.\n\n"
+        "The ranking mostly reflects shared references with the cluster. The limitation match explains a "
+        "pick; it is not what drives the ranking.")
     b["subj"] = b.subject.map(json.loads)
     b["cluster_id"] = b.subj.map(lambda s: s["cluster_id"])
     labs = dict(zip(b.cluster_id, b.subj.map(lambda s: s.get("label") or s["cluster_id"])))
@@ -716,6 +739,17 @@ def people_panel():
         st.markdown("**Early work**", help="Papers from the last two years most likely to become top-cited for "
                                            "their year (backtest AUC 0.82, p@50 0.67 vs citations-so-far 0.62). "
                                            "Author fame is deliberately not a feature.")
+        how_to_read(
+            "Papers from the last two years that the model expects to be in the **top quarter of their year "
+            "for citations from this field** over the next three years.\n\n"
+            "- **What drives it:** shared references with the field, early citations, and closeness to its "
+            "cluster's core. Novelty counts *against* a paper: novel work is cited less in the short run.\n"
+            "- **It predicts in-field uptake, not global impact.** In this corpus the two are unrelated. It "
+            "also partly reflects audience size: papers on the field's mainstream questions simply have more "
+            "potential readers. Read it as *what this community will read next*, not *the best papers*.\n"
+            "- **cites** is corpus citations so far, often 0 for this year's papers. **score** is log-odds, so "
+            "compare ranks rather than values.\n\n"
+            "Select a row to open the paper's card in the Detail tab.")
         f = ew.features.map(json.loads)
         tab = pd.DataFrame({"rank": ew["rank"], "year": f.map(lambda x: x.get("year")),
                             "paper": ew.subject.map(lambda x: json.loads(x).get("title")),
@@ -974,5 +1008,11 @@ def view_clusters():
             st.dataframe(prev, hide_index=True, width="stretch")
 
 
-{"Map & grid": view_map, "Corpus view": view_corpus, "Facet review": view_facets,
+def view_experiments():
+    from landscape.experiments_view import render_experiments
+
+    render_experiments(RUN)
+
+
+{"Map & grid": view_map, "Experiments": view_experiments, "Corpus view": view_corpus, "Facet review": view_facets,
  "Cluster review": view_clusters}[view]()

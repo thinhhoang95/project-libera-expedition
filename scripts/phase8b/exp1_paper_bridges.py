@@ -1,18 +1,18 @@
 """Experiment 1: paper-level bridges. Which not-yet-cited innovation papers will problem cluster X adopt?
 
 Candidates at cutoff T: (X, i) with i an innovation paper <= T outside X that no X paper has cited
-by T. Hit: an X paper published in T+1..T+3 cites i. Writes data/backtest/exp1_pairs.parquet.
+by T. Hit: an X paper published in T+1..T+3 cites i. Writes data/backtest/<run>/exp1_pairs.parquet. Usage: --run-id (default dro-pilot).
 """
 import numpy as np
 import pandas as pd
 from scipy import sparse
 
-from landscape import embed, store
+from landscape import embed, experiments, store
 from landscape.backtest import Assigner
 from landscape.cli import _params
 
-BASE, ALPHA = "dro-pilot", 0.5
-con = store.connect()
+BASE, ALPHA = experiments.run_arg(), 0.5
+con = store.connect(read_only=True)
 p = _params(con, BASE)
 ver = p.embedding.version
 papers = con.execute("""SELECT v.paper_id, p.year, coalesce(p.cited_by_count, 0) cbc FROM provenance v
@@ -87,5 +87,5 @@ for T in (2020, 2021, 2022, 2023):
     print(T, "rows so far", len(rows))
 df = pd.DataFrame(rows, columns=["T", "X", "i", "n_lim", "lim_sim3", "lim_max", "prob_sim", "coupling", "pop",
                                  "i_year", "hit", "X_size"])
-df.to_parquet("data/backtest/exp1_pairs.parquet")
+df.to_parquet(experiments.work_dir(BASE) / "exp1_pairs.parquet")
 print(df.groupby("T").agg(pairs=("hit", "size"), hits=("hit", "sum"), clusters=("X", "nunique")))
