@@ -54,9 +54,14 @@ them through `model_score()`.
 ### State at handoff
 
 - The code for all adopted items is in `src/landscape/signals.py` and `config.py`.
-- The last `landscape signals --run-id dro-pilot` run (with hidden gems and the book filter for
-  early work) **was still running at handoff and is unverified**. Re-run it first:
-  `uv run landscape signals --run-id dro-pilot`. The judge costs about $0.06.
+- The last `landscape signals --run-id dro-pilot` run finished:
+  - **Hidden gems work:** 125 `bridge_paper_gem` rows, plausible titles cited once.
+  - **Early work still put an old book chapter first.** "Convex Optimization Theory" (2025) is
+    typed `other` by OpenAlex.
+- **Fix committed after that run but not yet re-run:** early work now keeps only these types:
+  article, preprint, conference-paper, proceedings-article. Re-run first:
+  `uv run landscape signals --run-id dro-pilot` (the judge costs about $0.06). Then check that
+  the early-work top 10 is research papers.
 - An earlier run of the same code without those two fixes worked and produced `bridge_paper`
   (250 rows), `early_work` (50) and item-CF method transfers (174, judge top scores 4–5).
 

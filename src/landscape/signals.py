@@ -787,8 +787,9 @@ def early_work(ctx: Ctx, T: int, growth: pd.DataFrame, novelty: pd.Series | None
     R, pidx = _ref_matrix(ctx, ids)
     # new research only: OpenAlex dates new editions of old books as new works
     types = ctx.con.execute("SELECT paper_id, type FROM papers").df().set_index("paper_id")["type"]
+    # allowlist: a blocklist missed a 2025 Cambridge book chapter typed "other"
     recent = [x for x in papers[papers.year >= T - 1].paper_id
-              if types.get(x) not in ("book", "book-chapter", "reference-entry", "paratext", "erratum")]
+              if types.get(x) in ("article", "preprint", "conference-paper", "proceedings-article")]
     if not recent:
         return []
     Rn = R[[pidx[x] for x in recent]]
