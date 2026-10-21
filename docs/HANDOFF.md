@@ -160,7 +160,7 @@ No new metadata, embeddings, extraction or LLM calls were made.
   - **No symlinks:** exFAT can't hold them, so the venv lives off the drive. Set
     `export UV_PROJECT_ENVIRONMENT=~/.venvs/libera-expedition` before every `uv run` or
     `uv sync`. Without it, uv rebuilds `.venv` on the drive and fails.
-  - **Explorer config:** the local `.claude/launch.json` sets the same variable (not committed).
+  - **Explorer config:** `.claude/launch.json` sets the same variable to this Mac's path (`/Users/thinhhoang/.venvs/libera-expedition`); edit or drop the `env` entry on another machine.
   - **Windows `.venv`:** removed. On Windows, run `uv sync` again.
   - **`._*` files:** macOS writes AppleDouble files next to every edited file; `.gitignore`
     ignores them.

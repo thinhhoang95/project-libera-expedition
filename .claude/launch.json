@@ -4,8 +4,18 @@
     {
       "name": "explorer",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "--no-sync", "landscape", "explorer", "--port", "8501"],
-      "port": 8501
+      "runtimeArgs": [
+        "run",
+        "--no-sync",
+        "landscape",
+        "explorer",
+        "--port",
+        "8501"
+      ],
+      "port": 8501,
+      "env": {
+        "UV_PROJECT_ENVIRONMENT": "/Users/thinhhoang/.venvs/libera-expedition"
+      }
     }
   ]
 }
