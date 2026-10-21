@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 
 const LS = {
   get(k: string) {
@@ -33,15 +33,62 @@ export function ReviewerProvider({ children }: { children: ReactNode }) {
 }
 export const useReviewer = () => useContext(ReviewerCtx);
 
-// ------------------------------------------------------------------ paper drawer
+// ------------------------------------------------------------------ paper drawer and category sheet (in the URL)
 
-const DrawerCtx = createContext<{ paper: string | null; open: (pid: string | null) => void }>({ paper: null, open: () => {} });
-
-export function DrawerProvider({ children }: { children: ReactNode }) {
-  const [paper, open] = useState<string | null>(null);
-  return <DrawerCtx.Provider value={{ paper, open }}>{children}</DrawerCtx.Provider>;
+/** One search parameter as open/close state: opening pushes a history entry (Back closes it), closing replaces. */
+function useParamState(key: string, clear: string[] = []) {
+  const [sp, setSp] = useSearchParams();
+  const value = sp.get(key);
+  const open = useCallback(
+    (v: string | null, extra?: Record<string, string | null>) =>
+      setSp(
+        (prev) => {
+          const n = new URLSearchParams(prev);
+          if (v) n.set(key, v);
+          else n.delete(key);
+          if (v) clear.forEach((k) => n.delete(k));
+          Object.entries(extra ?? {}).forEach(([k, x]) => (x ? n.set(k, x) : n.delete(k)));
+          return n;
+        },
+        { replace: !v },
+      ),
+    [setSp, key], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  return [value, open] as const;
 }
-export const usePaperDrawer = () => useContext(DrawerCtx);
+
+export function usePaperDrawer() {
+  const [paper, open] = useParamState("paper");
+  return { paper, open: (pid: string | null) => open(pid) };
+}
+
+/** The category details sheet: `?cat=<cluster id>`, optionally `&with=<cluster id>` to filter its papers. */
+export function useCategorySheet() {
+  const [cat, open] = useParamState("cat", ["paper", "with"]);
+  const [sp] = useSearchParams();
+  return { cat, with: sp.get("with"), open: (cid: string | null, withCid?: string | null) => open(cid, { with: withCid ?? null }) };
+}
+
+// ------------------------------------------------------------------ recently opened papers and categories
+
+export type Recent = { kind: "paper" | "cat"; id: string; label: string; at: number };
+
+export function getRecents(project: string): Recent[] {
+  try {
+    return JSON.parse(LS.get(`libera.recent.${project}`) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+export function useRecordRecent(project: string | undefined, r: Omit<Recent, "at"> | null) {
+  const key = r ? `${r.kind}:${r.id}:${r.label}` : "";
+  useEffect(() => {
+    if (!project || !r) return;
+    const rest = getRecents(project).filter((x) => !(x.kind === r.kind && x.id === r.id));
+    LS.set(`libera.recent.${project}`, JSON.stringify([{ ...r, at: Date.now() }, ...rest].slice(0, 12)));
+  }, [project, key]); // eslint-disable-line react-hooks/exhaustive-deps
+}
 
 // ------------------------------------------------------------------ project from the URL
 

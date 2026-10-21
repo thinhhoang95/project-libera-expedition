@@ -2,6 +2,7 @@ import { Hourglass } from "lucide-react";
 import { useState } from "react";
 import { DataTable } from "./DataTable";
 import { Builders, quietRoleLabel, roleTone } from "./Discovery";
+import { CatLink, CommunityPicker } from "./Facets";
 import { PaperLink } from "./PaperDrawer";
 import { HowToRead, Note, Pill, pct } from "./ui";
 
@@ -55,9 +56,7 @@ export function ReadThisFirst({ rows }: { rows: ReadingRow[] }) {
   const [c, setC] = useState(clusters[0]?.[0] ?? "");
   return (
     <div>
-      <select className="select mb-2" value={c} onChange={(e) => setC(e.target.value)}>
-        {clusters.map(([id, l]) => <option key={id} value={id}>{l}</option>)}
-      </select>
+      <CommunityPicker value={c} onChange={setC} options={clusters} />
       <ReadingPath rows={rows.filter((r) => r.cluster_id === c)} />
     </div>
   );
@@ -76,9 +75,7 @@ export function EntryRoutes({ rows, effects, picker = true }: { rows: EntryRow[]
   return (
     <div>
       {picker && clusters.length > 1 && (
-        <select className="select mb-2" value={c} onChange={(e) => setC(e.target.value)}>
-          {clusters.map(([id, l]) => <option key={id} value={id}>{l}</option>)}
-        </select>
+        <CommunityPicker value={c} onChange={setC} options={clusters} />
       )}
       <DataTable rows={part} rowKey={(r) => r.strategy} dense cols={[
         { key: "strategy", label: "How they came in", render: (r) => <span className="text-[var(--text-strong)]">{r.strategy}</span> },
@@ -132,7 +129,7 @@ export function SurveyGaps({ rows, compact = false }: { rows: SurveyGapRow[]; co
   return (
     <>
       <DataTable rows={shown} rowKey={(r) => r.cluster_id} dense cols={[
-        { key: "label", label: "Community", render: (r) => <span className="text-[var(--text-strong)]">{r.label}</span> },
+        { key: "label", label: "Community", render: (r) => <CatLink cid={r.cluster_id} label={r.label} /> },
         { key: "status", label: "Surveys", render: (r) => <SurveyStatus s={r.status} /> },
         { key: "survey_share", label: "Survey share", align: "right",
           render: (r) => <span title={`field: ${pct(r.field_survey_share)}`}>{pct(r.survey_share)} <span className="faint">({r.recent_surveys} of {r.recent_papers})</span></span> },

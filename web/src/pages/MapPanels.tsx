@@ -4,13 +4,15 @@ import { DataTable } from "../components/DataTable";
 import { PaperCard, PaperLink, ReviewBar } from "../components/PaperDrawer";
 import { ACCENT, Plot } from "../components/Plot";
 import { HowToRead, Note, Pill, Seg, Spinner, pct, signedPct } from "../components/ui";
-import { usePaperDrawer } from "../context";
+import { CatLink } from "../components/Facets";
+import { useCategorySheet, usePaperDrawer } from "../context";
 import type { MapData } from "./MapGrid";
 
 // ------------------------------------------------------------------ grid
 
 export function GridPanel({ p, alpha, t1, t2, sel, haveSignals }: { p: string; alpha: number; t1: number; t2: number; sel: string | null; haveSignals: boolean }) {
   const { data: g, isLoading } = useApi<any>(`/p/${p}/grid` + qs({ alpha }));
+  const sheet = useCategorySheet();
   const fig = useMemo(() => {
     if (!g?.built) return null;
     const rows: string[] = g.rows.map((r: any) => r.cluster_id), cols: string[] = g.cols.map((r: any) => r.cluster_id);
@@ -38,14 +40,17 @@ export function GridPanel({ p, alpha, t1, t2, sel, haveSignals }: { p: string; a
     if (sel && rows.includes(sel)) shapes.push({ type: "rect", xref: "paper", x0: 0, x1: 1, y0: rows.indexOf(sel) - 0.5, y1: rows.indexOf(sel) + 0.5, line: { color: ACCENT, width: 2 } });
     if (sel && cols.includes(sel)) shapes.push({ type: "rect", yref: "paper", y0: 0, y1: 1, x0: cols.indexOf(sel) - 0.5, x1: cols.indexOf(sel) + 0.5, line: { color: ACCENT, width: 2 } });
     return { data, layout: { margin: { l: 170, r: 4, t: 4, b: 150 }, xaxis: { tickangle: -50, tickfont: { size: 9 } }, yaxis: { autorange: "reversed", tickfont: { size: 9 } }, showlegend: false, shapes },
-      nNew: newC.length, nTr: tr.length };
+      nNew: newC.length, nTr: tr.length, rows, cols };
   }, [g, t1, t2, sel, haveSignals]);
   if (isLoading) return <Spinner />;
   if (!g?.built || !fig) return <div className="muted text-[13px]">No matrix for this α.</div>;
   return (
     <>
-      <Plot data={fig.data} layout={fig.layout as any} height={620} />
-      <Note>Medium clusters at α = {alpha} (◇ = hub). Colour = papers in {t1}–{t2} (log). □ new combinations first seen in {Math.max(t1, t2 - 1)}–{t2} ({fig.nNew}). {alpha === 0.5 ? `◇ top method-transfer candidates (${fig.nTr}).` : "Method-transfer candidates are outlined at α = 0.5."}</Note>
+      <Plot data={fig.data} layout={fig.layout as any} height={620} onClick={(pt: any) => {
+        const r = fig.rows[pt.pointIndex?.[0] ?? -1], c = fig.cols[pt.pointIndex?.[1] ?? -1];
+        if (pt.data?.type === "heatmap" && r && c) sheet.open(r, c);
+      }} />
+      <Note>Select a cell for the problem's details sheet, filtered to the papers using that method. Medium clusters at α = {alpha} (◇ = hub). Colour = papers in {t1}–{t2} (log). □ new combinations first seen in {Math.max(t1, t2 - 1)}–{t2} ({fig.nNew}). {alpha === 0.5 ? `◇ top method-transfer candidates (${fig.nTr}).` : "Method-transfer candidates are outlined at α = 0.5."}</Note>
     </>
   );
 }
@@ -58,6 +63,7 @@ export function DetailPanel({ p, m, sel, setSel, res, alpha, t1, t2, nWin, statu
   selPaper: string | null; setSelPaper: (s: string | null) => void;
 }) {
   const c = m.clusters.find((x) => x.cluster_id === sel);
+  const { open: openPaper } = usePaperDrawer();
   const { data: central } = useApi<any[]>(sel ? `/p/${p}/cluster/${encodeURIComponent(sel)}/papers` + qs({ res, alpha }) : null);
   const s = sel ? scores.get(sel) : undefined;
   return (
@@ -68,7 +74,10 @@ export function DetailPanel({ p, m, sel, setSel, res, alpha, t1, t2, nWin, statu
       </select>
       {c && (
         <div>
-          <div className="h-title flex items-center gap-2 text-[16px]"><span style={{ color: c.color }}>●</span> {c.label}</div>
+          <div className="flex items-start justify-between gap-2">
+            <div className="h-title flex items-center gap-2 text-[16px]"><span style={{ color: c.color }}>●</span> {c.label}</div>
+            <CatLink cid={c.cluster_id} className="btn btn-sm shrink-0 !no-underline">Details sheet</CatLink>
+          </div>
           {c.kind === "hub" && <div className="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-[12.5px]">Hub cluster: a coherent body of work whose boundary shifts between clustering seeds (stability {c.stability.toFixed(2)}, centrality z {c.centrality?.toFixed(2)}). Its signals are ranked separately from stable clusters.</div>}
           {c.description && <p className="muted mt-1.5 text-[13px]">{c.description}</p>}
           <div className="mt-2 text-[13px]">{c.size} papers · stability {c.stability.toFixed(2)} · {nWin.get(c.cluster_id) ?? 0} in {t1}–{t2}</div>
@@ -86,6 +95,7 @@ export function DetailPanel({ p, m, sel, setSel, res, alpha, t1, t2, nWin, statu
       {selPaper && (
         <div className="border-t border-[var(--line)] pt-3">
           <PaperCard pid={selPaper} compact />
+          <button className="btn btn-sm mt-2" onClick={() => openPaper(selPaper)}>Open the full paper card</button>
         </div>
       )}
       {!c && !selPaper && <Note>Click a paper or a cluster centroid on the map.</Note>}

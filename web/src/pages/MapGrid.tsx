@@ -1,9 +1,10 @@
 import clsx from "clsx";
 import { Pause, Play, SlidersHorizontal } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigationType, useSearchParams } from "react-router-dom";
 import { qs, useApi } from "../api";
 import { PageHeader } from "../components/Layout";
+import { CatLink } from "../components/Facets";
 import { usePaperDrawer, useProjectId } from "../context";
 import { ACCENT, MUTED, Plot } from "../components/Plot";
 import { Card, Empty, Note, Seg, Spinner } from "../components/ui";
@@ -59,22 +60,63 @@ const quantile = (vals: number[], q: number) => {
 type Layers = { papers: boolean; clusters: boolean; density: boolean; compare: boolean; badges: boolean; flows: boolean;
   migration: boolean; novel: boolean; pockets: boolean; bridges: boolean; people: boolean };
 
+const TABS = ["Grid", "Detail", "Ranking", "Bridges", "People"];
+
+/** The map's view lives in the URL (shareable, survives reloads); a link that changes it remounts the view. */
 export function MapGrid() {
+  const [sp] = useSearchParams();
+  const navType = useNavigationType();
+  const sig = ["facet", "alpha", "res", "sel", "focus", "tab"].map((k) => sp.get(k) ?? "").join("|");
+  const last = useRef(sig);
+  const [key, setKey] = useState(0);
+  useEffect(() => {
+    if (sig === last.current) return;
+    if (navType === "PUSH") setKey((k) => k + 1);
+    last.current = sig;
+  }, [sig, navType]);
+  return <MapView key={key} />;
+}
+
+function MapView() {
   const p = useProjectId();
   const { open } = usePaperDrawer();
-  const [facet, setFacet] = useState("problem");
-  const [alphaRaw, setAlpha] = useState(0.3);
-  const [res, setRes] = useState("medium");
+  const [sp, setSp] = useSearchParams();
+  const init = useRef({
+    facet: FACETS.includes(sp.get("facet") ?? "") ? sp.get("facet")! : "problem",
+    alpha: sp.get("alpha") != null ? Number(sp.get("alpha")) : 0.3,
+    res: RES.includes(sp.get("res") ?? "") ? sp.get("res")! : "medium",
+    sel: sp.get("sel"), focus: sp.get("focus"), tab: TABS.includes(sp.get("tab") ?? "") ? sp.get("tab")! : "Grid",
+    win: /^\d{4}-\d{4}$/.test(sp.get("w") ?? "") ? (sp.get("w")!.split("-").map(Number) as [number, number]) : null,
+  }).current;
+  const [facet, setFacet] = useState(init.facet);
+  const [alphaRaw, setAlpha] = useState(ALPHAS.includes(init.alpha) ? init.alpha : 0.3);
+  const [res, setRes] = useState(init.res);
+  const focus = init.focus;
   const alpha = GLOSS.has(facet) ? alphaRaw : 0;
   const [L, setL] = useState<Layers>({ papers: true, clusters: true, density: false, compare: false, badges: false, flows: false,
     migration: false, novel: false, pockets: false, bridges: false, people: false });
   const [topN, setTopN] = useState(30);
   const [author, setAuthor] = useState("");
-  const [tab, setTab] = useState("Grid");
-  const [sel, setSel] = useState<string | null>(null);
-  const [selPaper, setSelPaper] = useState<string | null>(null);
+  const [tab, setTab] = useState(init.tab);
+  const [sel, setSel] = useState<string | null>(init.sel);
+  const [selPaper, setSelPaper] = useState<string | null>(focus);
   const { data: m, isLoading } = useApi<MapData>(`/p/${p}/map` + qs({ facet, alpha, res }), { staleTime: 600_000 });
-  const [win, setWin] = useState<[number, number] | null>(null);
+  const [win, setWin] = useState<[number, number] | null>(init.win);
+  // a focused paper selects its cluster once the map is in
+  useEffect(() => {
+    if (!m?.built || !focus || init.sel) return;
+    const i = m.points.paper_id.indexOf(focus);
+    if (i >= 0 && m.points.cluster_id[i]) setSel(m.points.cluster_id[i]);
+  }, [m]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    setSp((prev) => {
+      const n = new URLSearchParams(prev);
+      const put = (k: string, v: string | null | undefined) => (v ? n.set(k, v) : n.delete(k));
+      put("facet", facet); put("alpha", String(alpha)); put("res", res); put("sel", sel); put("tab", tab);
+      put("w", win && m && (win[0] !== m.y0 || win[1] !== m.y1) ? `${win[0]}-${win[1]}` : null);
+      return n;
+    }, { replace: true });
+  }, [facet, alpha, res, sel, tab, win, m]); // eslint-disable-line react-hooks/exhaustive-deps
   const [playing, setPlaying] = useState(false);
   useEffect(() => {
     if (m?.built && !win) setWin([m.y0, m.y1]);
@@ -243,8 +285,20 @@ export function MapGrid() {
       data.push({ type: "scatter", mode: "text", x: txt.map((c) => c.x), y: txt.map((c) => c.y), text: txt.map((c) => disp(c.cluster_id)), textposition: "top center", hoverinfo: "skip",
         textfont: { size: txt.map((c) => Math.min(15, Math.max(10, 9 + 25 * Math.sqrt(c.share)))), color: txt.map((c) => (c.cluster_id === sel ? ACCENT : strong)) } });
     }
-    return { data, layout: { margin: { l: 0, r: 0, t: 0, b: 0 }, showlegend: false, xaxis: { visible: false }, yaxis: { visible: false, scaleanchor: "x" }, dragmode: "pan", annotations } };
-  }, [m, derived, L, sel, novelty, pockets, flowsC, flowsM, arcs, path, topN, t1, t2, res, onBridgeMap, nf]); // eslint-disable-line react-hooks/exhaustive-deps
+    // the focused paper (from "Show on the map"): a star, and the view zoomed around it
+    const fi = focus ? P.paper_id.indexOf(focus) : -1;
+    const xaxis: any = { visible: false }, yaxis: any = { visible: false, scaleanchor: "x" };
+    if (fi >= 0) {
+      data.push({ type: "scatter", mode: "markers+text", x: [P.x[fi]], y: [P.y[fi]], customdata: [focus], text: ["this paper"], textposition: "bottom center",
+        textfont: { size: 11, color: ACCENT }, hovertext: (P.title[fi] ?? "").slice(0, 90), hoverinfo: "text",
+        marker: { size: 18, symbol: "star", color: ACCENT, line: { color: "white", width: 1.5 } } });
+      const dx = (Math.max(...P.x) - Math.min(...P.x)) / 7, dy = (Math.max(...P.y) - Math.min(...P.y)) / 7;
+      xaxis.range = [P.x[fi] - dx, P.x[fi] + dx];
+      yaxis.range = [P.y[fi] - dy, P.y[fi] + dy];
+    }
+    return { data, layout: { margin: { l: 0, r: 0, t: 0, b: 0 }, showlegend: false, xaxis, yaxis, dragmode: "pan", annotations,
+      uirevision: `${facet}|${alpha}|${res}|${focus ?? ""}` } };
+  }, [m, derived, L, sel, novelty, pockets, flowsC, flowsM, arcs, path, topN, t1, t2, res, onBridgeMap, nf, focus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const axisFig = useMemo(() => {
     if (!m?.built) return null;
@@ -276,7 +330,9 @@ export function MapGrid() {
     );
   return (
     <div className="mx-auto max-w-[1700px]">
-      <PageHeader title="Map & grid" sub="One map, one grid, one time axis. Every layer reads the same window." />
+      <PageHeader title="Map & grid" sub="One map, one grid, one time axis. Every layer reads the same window. The view is kept in the address, so a link reopens it.">
+        {sel && <CatLink cid={sel} className="btn btn-sm !no-underline">Open the selected cluster's details</CatLink>}
+      </PageHeader>
       <div className="grid gap-4 xl:grid-cols-[240px_minmax(0,1fr)] min-[1800px]:grid-cols-[240px_minmax(0,1.4fr)_minmax(0,1fr)]">
         <Card title="Controls" icon={<SlidersHorizontal className="size-4 text-brand-600" />} className="self-start">
           <div className="flex flex-col gap-3 text-[13px]">
@@ -369,7 +425,7 @@ export function MapGrid() {
         <div className="min-w-0 xl:col-span-2 min-[1800px]:col-span-1">
           <div className="card">
             <div className="scroll-thin flex overflow-x-auto border-b border-[var(--line)] px-4">
-              {["Grid", "Detail", "Ranking", "Bridges", "People"].map((t) => <button key={t} className={clsx("tab", t === tab && "active")} onClick={() => setTab(t)}>{t}</button>)}
+              {TABS.map((t) => <button key={t} className={clsx("tab", t === tab && "active")} onClick={() => setTab(t)}>{t}</button>)}
             </div>
             <div className="p-4">
               {m && derived && tab === "Grid" && <GridPanel p={p} alpha={GLOSS.has(facet) ? alpha : 0.3} t1={t1} t2={t2} sel={sel} haveSignals={m.have_signals} />}

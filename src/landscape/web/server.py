@@ -24,6 +24,7 @@ from .. import experiments, jobs, portfolio, projects, replica
 from ..config import ROOT, RunParams, project_dir
 from ..research_lab import lab_dir
 from .data import Router, _CACHE, DB, jl, memo, q
+from .views_facets import router as facets_router
 from .views_lab import router as lab_router
 from .views_map import router as map_router
 from .views_portfolio import router as portfolio_router
@@ -72,7 +73,7 @@ def create_app(worker: bool | None = None) -> FastAPI:
             _WORKER.shutdown()
 
     app = FastAPI(title="Libera Expedition", lifespan=lifespan)
-    for r in (router, portfolio_router, map_router, review_router, lab_router):
+    for r in (router, portfolio_router, map_router, facets_router, review_router, lab_router):
         app.include_router(r, prefix="/api")
 
     @app.exception_handler(HTTPException)

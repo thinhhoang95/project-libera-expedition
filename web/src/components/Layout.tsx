@@ -1,26 +1,31 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
-  Bell, Boxes, CheckCircle2, Compass, FileText, FlaskConical, FolderKanban, Grid2x2, Home, Layers3,
-  ListChecks, Loader2, Menu, Microscope, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Sun, Tags, Workflow, X, XCircle,
+  Bell, Boxes, CheckCircle2, Clock, Compass, FileText, FlaskConical, FolderKanban, Grid2x2, Home, Keyboard, Layers3,
+  ListChecks, Loader2, Menu, Microscope, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Shapes, Sun, Tags, Workflow, X, XCircle,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, qs, useApi, type Job, type Project } from "../api";
-import { LS, initials, useReviewer, useTheme } from "../context";
+import { LS, getRecents, initials, useCategorySheet, usePaperDrawer, useReviewer, useTheme } from "../context";
+import { FACET_META, FACET_ORDER, type FacetKey } from "../facets";
+import { CategorySheet } from "./CategorySheet";
+import { Dot } from "./Facets";
 import { PaperDrawer } from "./PaperDrawer";
 import { Boundary } from "./ui";
 
 export const NAV = [
-  { to: "start", label: "Start", icon: Home },
-  { to: "paper", label: "My paper", icon: FileText },
-  { to: "map", label: "Map & grid", icon: Grid2x2 },
-  { to: "lab", label: "Research lab", icon: Microscope },
-  { to: "experiments", label: "Experiments", icon: FlaskConical },
-  { to: "corpus", label: "Corpus view", icon: Layers3 },
-  { to: "facets", label: "Facet review", icon: Tags },
-  { to: "clusters", label: "Cluster review", icon: Boxes },
+  { to: "start", label: "Start", icon: Home, group: "Explore", key: "s" },
+  { to: "explore", label: "Facets", icon: Shapes, group: "Explore", key: "f" },
+  { to: "map", label: "Map & grid", icon: Grid2x2, group: "Explore", key: "m" },
+  { to: "paper", label: "My paper", icon: FileText, group: "Explore", key: "p" },
+  { to: "lab", label: "Research lab", icon: Microscope, group: "Evidence", key: "l" },
+  { to: "experiments", label: "Experiments", icon: FlaskConical, group: "Evidence", key: "x" },
+  { to: "corpus", label: "Corpus view", icon: Layers3, group: "Review", key: "c" },
+  { to: "facets", label: "Facet review", icon: Tags, group: "Review", key: "r" },
+  { to: "clusters", label: "Cluster review", icon: Boxes, group: "Review", key: "k" },
 ];
+const GROUPS = ["Explore", "Evidence", "Review"];
 
 function Brand({ collapsed }: { collapsed?: boolean }) {
   return (
@@ -82,11 +87,18 @@ function Sidebar({ onNavigate, collapsed, onToggle }: { onNavigate?: () => void;
           </button>
         )}
       </div>
-      <div className="mt-6 flex flex-col gap-0.5">
+      <div className="mt-5 flex flex-col gap-0.5">
         {project ? (
           <>
-            {NAV.map((n) => (
-              <NavItem key={n.to} to={`/p/${project}/${n.to}`} icon={n.icon} label={n.label} collapsed={collapsed} />
+            {GROUPS.map((g, i) => (
+              <div key={g} className={clsx("flex flex-col gap-0.5", i > 0 && "mt-2")}>
+                {collapsed ? (i > 0 && <div className="mx-2 mb-1 border-t border-[var(--line)]" />) : (
+                  <div className="faint px-3 pb-0.5 text-[11px] font-semibold tracking-wide uppercase">{g}</div>
+                )}
+                {NAV.filter((n) => n.group === g).map((n) => (
+                  <NavItem key={n.to} to={`/p/${project}/${n.to}`} icon={n.icon} label={n.label} collapsed={collapsed} />
+                ))}
+              </div>
             ))}
             <div className="my-2 border-t border-[var(--line)]" />
             <NavItem
@@ -182,13 +194,20 @@ function Sidebar({ onNavigate, collapsed, onToggle }: { onNavigate?: () => void;
 
 // ------------------------------------------------------------------ command palette (⌘K)
 
+type Item = { key: string; label: ReactNode; hint: ReactNode; go: () => void; group: string };
+
 function SearchPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { project } = useParams();
   const nav = useNavigate();
+  const sheet = useCategorySheet();
+  const drawer = usePaperDrawer();
   const [term, setTerm] = useState("");
   const [sel, setSel] = useState(0);
   const { data: hits } = useApi<{ paper_id: string; title: string; year: number }[]>(
-    project && term.length >= 2 ? `/p/${project}/search` + qs({ term, limit: 12 }) : null,
+    project && term.length >= 2 ? `/p/${project}/search` + qs({ term, limit: 10 }) : null,
+  );
+  const { data: cats } = useApi<{ facet: FacetKey; cluster_id: string; label: string; size: number; color: string }[]>(
+    project && term.length >= 2 ? `/p/${project}/categories/search` + qs({ term, limit: 8 }) : null,
   );
   const { data: projects } = useApi<Project[]>("/projects");
   useEffect(() => {
@@ -199,26 +218,45 @@ function SearchPalette({ open, onClose }: { open: boolean; onClose: () => void }
   }, [open]);
   if (!open) return null;
   const t = term.toLowerCase();
-  const items: { key: string; label: ReactNode; hint: string; go: () => void }[] = [
+  const recents = project && !t ? getRecents(project) : [];
+  const items: Item[] = [
+    ...recents.map((r) => ({
+      key: "r" + r.kind + r.id, group: "Recent",
+      label: <span className="flex items-center gap-2"><Clock className="faint size-3.5 shrink-0" /><span className="truncate">{r.label}</span></span>,
+      hint: r.kind === "cat" ? "Category" : "Paper",
+      go: () => (r.kind === "cat" ? sheet.open(r.id) : drawer.open(r.id)),
+    })),
     ...(project
       ? NAV.filter((n) => n.label.toLowerCase().includes(t)).map((n) => ({
-          key: "nav" + n.to, label: n.label, hint: "Page", go: () => nav(`/p/${project}/${n.to}`),
+          key: "nav" + n.to, group: "Pages", label: n.label, hint: <span>Page <kbd className="key ml-1">g</kbd> <kbd className="key">{n.key}</kbd></span>,
+          go: () => nav(`/p/${project}/${n.to}`),
         }))
       : []),
-    ...(projects ?? [])
-      .filter((p) => !t || p.name.toLowerCase().includes(t) || p.id.includes(t))
-      .slice(0, 4)
-      .map((p) => ({ key: "p" + p.id, label: p.name, hint: "Project", go: () => nav(`/p/${p.id}/start`) })),
-    ...(hits ?? []).map((h) => ({
-      key: h.paper_id,
-      label: (<span><span className="faint mr-2">{h.year}</span>{h.title}</span>),
-      hint: "Open in My paper",
-      go: () => nav(`/p/${project}/paper/${h.paper_id}`),
+    ...(project && t.length >= 2
+      ? FACET_ORDER.filter((f) => FACET_META[f].plural.toLowerCase().includes(t)).map((f) => ({
+          key: "fx" + f, group: "Pages", label: `Explore ${FACET_META[f].plural.toLowerCase()}`, hint: "Facet", go: () => nav(`/p/${project}/explore/${f}`),
+        }))
+      : []),
+    ...(cats ?? []).map((c) => ({
+      key: c.cluster_id, group: "Categories",
+      label: <span className="flex items-center gap-2"><Dot color={c.color} /><span className="truncate">{c.label}</span></span>,
+      hint: <span><span style={{ color: FACET_META[c.facet]?.color }} className="font-semibold">{FACET_META[c.facet]?.label}</span> · {c.size} papers</span>,
+      go: () => sheet.open(c.cluster_id),
     })),
+    ...(hits ?? []).map((h) => ({
+      key: h.paper_id, group: "Papers",
+      label: (<span><span className="faint mr-2">{h.year}</span>{h.title}</span>),
+      hint: "Open paper",
+      go: () => drawer.open(h.paper_id),
+    })),
+    ...(projects ?? [])
+      .filter((p) => (t ? p.name.toLowerCase().includes(t) || p.id.includes(t) : p.id !== project))
+      .slice(0, 4)
+      .map((p) => ({ key: "p" + p.id, group: "Projects", label: p.name, hint: "Project", go: () => nav(`/p/${p.id}/start`) })),
   ];
   const go = (i: number) => {
-    items[i]?.go();
     onClose();
+    items[i]?.go();
   };
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/30 px-4 pt-[12vh] backdrop-blur-[2px]" onClick={onClose}>
@@ -234,11 +272,11 @@ function SearchPalette({ open, onClose }: { open: boolean; onClose: () => void }
             }}
             onKeyDown={(e) => {
               if (e.key === "Escape") onClose();
-              if (e.key === "ArrowDown") setSel((s) => Math.min(s + 1, items.length - 1));
-              if (e.key === "ArrowUp") setSel((s) => Math.max(s - 1, 0));
+              if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(s + 1, items.length - 1)); }
+              if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
               if (e.key === "Enter") go(sel);
             }}
-            placeholder={project ? "Search papers by title or DOI, pages, projects…" : "Search projects…"}
+            placeholder={project ? "Search papers, categories (problems, methods…), pages, projects…" : "Search projects…"}
             className="h-12 flex-1 bg-transparent text-[14.5px] text-[var(--text-strong)] outline-none"
           />
           <kbd className="faint text-[11px]">esc</kbd>
@@ -246,17 +284,52 @@ function SearchPalette({ open, onClose }: { open: boolean; onClose: () => void }
         <div className="scroll-thin max-h-[55vh] overflow-y-auto p-1.5">
           {items.length === 0 && <div className="muted px-3 py-6 text-center text-[13px]">{term.length < 2 ? "Type to search" : "No matches"}</div>}
           {items.map((it, i) => (
-            <button
-              key={it.key}
-              onMouseEnter={() => setSel(i)}
-              onClick={() => go(i)}
-              className={clsx("flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[13.5px]", i === sel && "bg-[var(--nav-active)]")}
-            >
-              <span className="min-w-0 flex-1 truncate">{it.label}</span>
-              <span className="faint shrink-0 text-[11.5px]">{it.hint}</span>
-            </button>
+            <div key={it.key}>
+              {(i === 0 || items[i - 1].group !== it.group) && <div className="faint px-3 pt-2 pb-1 text-[11px] font-semibold tracking-wide uppercase">{it.group}</div>}
+              <button
+                ref={(el) => { if (el && i === sel) el.scrollIntoView({ block: "nearest" }); }}
+                onMouseEnter={() => setSel(i)}
+                onClick={() => go(i)}
+                className={clsx("flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[13.5px]", i === sel && "bg-[var(--nav-active)]")}
+              >
+                <span className="min-w-0 flex-1 truncate">{it.label}</span>
+                <span className="faint shrink-0 text-[11.5px]">{it.hint}</span>
+              </button>
+            </div>
           ))}
         </div>
+        <div className="faint flex items-center gap-3 border-t border-[var(--line)] px-4 py-2 text-[11.5px]">
+          <span><kbd className="key">↑</kbd> <kbd className="key">↓</kbd> move</span><span><kbd className="key">↵</kbd> open</span>
+          <span className="ml-auto"><kbd className="key">?</kbd> all shortcuts</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ keyboard shortcuts
+
+function Shortcuts({ open, onClose }: { open: boolean; onClose: () => void }) {
+  if (!open) return null;
+  const rows: [ReactNode, string][] = [
+    [<><kbd className="key">⌘</kbd> <kbd className="key">K</kbd> or <kbd className="key">/</kbd></>, "Search papers, categories, pages"],
+    [<><kbd className="key">⌘</kbd> <kbd className="key">B</kbd></>, "Collapse or expand the sidebar"],
+    [<kbd className="key">Esc</kbd>, "Close the paper, then the category sheet"],
+    [<kbd className="key">?</kbd>, "This list"],
+    ...NAV.map((n) => [<><kbd className="key">g</kbd> <kbd className="key">{n.key}</kbd></>, `Go to ${n.label}`] as [ReactNode, string]),
+  ];
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/30 px-4 pt-[12vh]" onClick={onClose}>
+      <div className="card w-full max-w-md p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="h-title flex items-center gap-2 text-[15px]"><Keyboard className="size-4" /> Keyboard shortcuts</h2>
+          <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose}><X className="size-4" /></button>
+        </div>
+        <ul className="flex flex-col">
+          {rows.map(([k, l], i) => (
+            <li key={i} className="flex items-center justify-between border-b border-[var(--line)] py-1.5 text-[13px] last:border-0"><span>{l}</span><span className="shrink-0">{k}</span></li>
+          ))}
+        </ul>
       </div>
     </div>
   );
@@ -320,7 +393,7 @@ function Notifications() {
   );
 }
 
-function Topbar({ onSearch, onMenu }: { onSearch: () => void; onMenu: () => void }) {
+function Topbar({ onSearch, onMenu, onHelp }: { onSearch: () => void; onMenu: () => void; onHelp: () => void }) {
   const { reviewer } = useReviewer();
   const { project } = useParams();
   const { data: p } = useApi<Project>(project ? `/projects/${project}` : null);
@@ -332,10 +405,11 @@ function Topbar({ onSearch, onMenu }: { onSearch: () => void; onMenu: () => void
         className="flex h-10 min-w-0 max-w-xl flex-1 items-center gap-2.5 rounded-[10px] border border-[var(--line)] bg-[var(--surface-2)] px-3 text-left text-[13.5px] text-[var(--faint)] hover:border-[var(--line-strong)]"
       >
         <Search className="size-4" />
-        <span className="flex-1 truncate">{project ? `Search papers in ${p?.name ?? project}, pages, projects…` : "Search projects…"}</span>
+        <span className="flex-1 truncate">{project ? `Search papers and categories in ${p?.name ?? project}…` : "Search projects…"}</span>
         <kbd className="hidden rounded border border-[var(--line)] px-1.5 text-[11px] sm:block">⌘ K</kbd>
       </button>
       <div className="ml-auto flex items-center gap-1.5">
+        <button className="btn btn-ghost btn-icon hidden sm:inline-flex" title="Keyboard shortcuts (?)" onClick={onHelp}><Keyboard className="size-[18px]" strokeWidth={1.8} /></button>
         <Notifications />
         <div className="mx-1 hidden h-6 border-l border-[var(--line)] sm:block" />
         <span className="grid size-9 place-items-center rounded-full bg-[var(--chip)] text-[13px] font-semibold text-[var(--chip-text)]" title={reviewer || "Set your name in the sidebar"}>
@@ -348,7 +422,11 @@ function Topbar({ onSearch, onMenu }: { onSearch: () => void; onMenu: () => void
 
 export function Layout() {
   const loc = useLocation();
+  const nav = useNavigate();
+  const { project } = useParams();
   const [search, setSearch] = useState(false);
+  const [help, setHelp] = useState(false);
+  const chord = useRef<number>(0);
   const [menu, setMenu] = useState(false);
   const [collapsed, setCollapsed] = useState(() => LS.get("libera.sidebar") === "collapsed");
   const toggle = () =>
@@ -362,14 +440,24 @@ export function Layout() {
         e.preventDefault();
         setSearch((s) => !s);
       }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b" && !(e.target as HTMLElement)?.closest?.("input, textarea")) {
+      const typing = !!(e.target as HTMLElement)?.closest?.("input, textarea, select, [contenteditable]");
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b" && !typing) {
         e.preventDefault();
         toggle();
+      }
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "/") { e.preventDefault(); setSearch(true); }
+      else if (e.key === "?") setHelp((x) => !x);
+      else if (e.key === "g") chord.current = Date.now();
+      else if (Date.now() - chord.current < 1200) {
+        const n = NAV.find((x) => x.key === e.key);
+        chord.current = 0;
+        if (n && project) nav(`/p/${project}/${n.to}`);
       }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, []);
+  }, [project]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="flex min-h-full">
       <aside className={clsx("hidden shrink-0 border-r border-[var(--line)] bg-[var(--surface)] whitespace-nowrap lg:block",
@@ -385,7 +473,7 @@ export function Layout() {
         </div>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar onSearch={() => setSearch(true)} onMenu={() => setMenu(true)} />
+        <Topbar onSearch={() => setSearch(true)} onMenu={() => setMenu(true)} onHelp={() => setHelp(true)} />
         <main className="min-w-0 flex-1 px-4 py-5 md:px-7 md:py-6">
           <Boundary resetKey={loc.pathname}>
             <Outlet />
@@ -393,6 +481,8 @@ export function Layout() {
         </main>
       </div>
       <SearchPalette open={search} onClose={() => setSearch(false)} />
+      <Shortcuts open={help} onClose={() => setHelp(false)} />
+      <CategorySheet />
       <PaperDrawer />
     </div>
   );

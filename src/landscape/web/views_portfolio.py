@@ -139,9 +139,9 @@ def overview(p: str) -> dict:
     L = portfolio_file(p, "live_imports.parquet")
     if L is not None:
         o = L[L.outside_field & (L.year >= T - 10)].head(8)
-        out["imported_now"] = records(o[["paper_id", "title", "subfield", "recent_citers", "cluster_label", "year"]])
+        out["imported_now"] = records(o[["paper_id", "title", "subfield", "recent_citers", "cluster_id", "cluster_label", "year"]])
         gap = L[~L.outside_field].sort_values("recent_citers", ascending=False).head(8)
-        out["coverage_gaps"] = records(gap[["paper_id", "title", "year", "recent_citers", "cluster_label"]])
+        out["coverage_gaps"] = records(gap[["paper_id", "title", "year", "recent_citers", "cluster_id", "cluster_label"]])
     ew = q("""SELECT subject, rank FROM signals WHERE run_id = ? AND signal_type = 'early_work' AND variant = 'all'
               ORDER BY rank LIMIT 8""", (p,))
     out["read_now"] = [{"paper_id": jl(s).get("paper_id"), "title": jl(s).get("title"), "rank": int(r)}

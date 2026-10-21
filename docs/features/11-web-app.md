@@ -4,10 +4,11 @@ Status: implemented · Code: `src/landscape/web/` (FastAPI), `web/` (React), `jo
 
 The web app replaces the Streamlit explorer as the main way to use the engine. It shows the same views
 (Start here, My paper, Map & grid, Research lab, Experiments, Corpus view, Facet review, Cluster review)
-with the same numbers and the same evidence notes. It adds three things:
+with the same numbers and the same evidence notes. It adds four things:
 - several projects side by side;
 - a queue that runs the whole pipeline, with progress you can pause and resume;
-- reading while a step writes the database.
+- reading while a step writes the database;
+- facet categories with a details sheet each, and navigation that links every view (below).
 
 ## Run
 
@@ -132,6 +133,42 @@ work. A job therefore resumes by re-running its first unfinished step and skippi
 
 Events (started, finished, failed, paused) feed the notification bell.
 
+## Facets, details sheets and navigation
+
+**Categories.** Each facet's clusters are its categories: problem and method at α = 0.5 (where bridges
+and method transfer are computed), innovation, result and limitations at α = 0, all at medium resolution.
+The problem categories are the communities. The **Facets** page lists every facet's categories with a
+trend, the share in a time window and the change against the window before it. Tick categories to
+compare their trends. **Across facets** crosses two facets as a matrix; a cell opens the row category
+filtered to the papers in both.
+
+**Details sheet.** Any category opens a sheet over the current page (`?cat=<cluster id>`), from Start
+here, Facets, the map, the grid, Cluster review, My paper, the paper card or search. One time seeker
+scopes the whole sheet. The sheet has:
+- the trend: papers per year and the share of the facet, with the window's papers, share, Δ share,
+  rank, first and peak year;
+- how it relates to the other facets: where its papers fall in each other facet, with lift against the
+  whole map in the same window, in the window or over time; a row filters the papers;
+- citations with its sibling categories, and the signals that name it (bridges, papers to bring in,
+  method transfer, new combinations; direction labels for other α);
+- its papers: search over titles and facet statements, five sorts, filters by window, stated limitation
+  and categories in the other facets, and a CSV download.
+
+`?with=<cluster id>` opens a sheet already filtered (the grid and the matrix use it). Other clusters (other
+α or resolution, from the map or Cluster review) open the same sheet, marked as not a reference category.
+
+**Paper card.** The paper drawer (`?paper=<id>`) shows the paper's category in each facet, the corpus
+papers it builds on and those citing it (each opens its own card), and links to the map and My paper.
+
+**Map links.** The map keeps its view in the address (`facet`, `alpha`, `res`, `sel`, `tab`, `w`), so a
+link or a reload reopens it. *Show on the map* from a sheet selects the category; from a paper it adds a
+star at `focus=<id>` and zooms there. Pan and zoom now survive layer and window changes.
+
+**Finding your way.** Opening a sheet or a paper adds a history entry, so Back closes it. The sidebar groups
+pages into Explore, Evidence and Review. Search (⌘K or `/`) finds papers, categories of every facet,
+pages and projects, and lists what you opened recently. `g` then a letter goes to a page; `?` lists the
+shortcuts. Start here has a section bar, and its community names open their sheets.
+
 ## Reading while a step writes
 
 While a step writes the database, no other process may open it. The web server therefore never opens the
@@ -153,7 +190,10 @@ Everything is under `/api`:
 - `/projects`, `/jobs`, `/pipeline/steps`, `/events` and `/system`;
 - per project, `/p/<project>/…`: `overview`, `my-paper/<id>`, `map`, `grid`, `bridges`,
   `paper-bridges`, `external-imports`, `people`, `lab`, `experiments`, `corpus`, `facets/…`,
-  `clusters/…`, `paper/<id>`, `search` and `reviews`.
+  `clusters/…`, `paper/<id>`, `search` and `reviews`;
+- the facet categories (`views_facets.py`): `catalogue` (every facet's categories with yearly counts),
+  `category/<cluster id>` (the sheet: papers with their other categories, flows, signals),
+  `cooccurrence?a=&b=` and `categories/search`.
 
 The view endpoints port the Streamlit computations one for one. Large tables (map points) are sent as
 columns, and the time window, layers and selection are applied in the browser.

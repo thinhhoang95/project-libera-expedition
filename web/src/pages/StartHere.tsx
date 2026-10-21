@@ -7,8 +7,10 @@ import { DataTable } from "../components/DataTable";
 import { PageHeader } from "../components/Layout";
 import { PaperLink } from "../components/PaperDrawer";
 import { Plot } from "../components/Plot";
-import { Card, Empty, HowToRead, Md, Note, Pill, Seg, Sparkline, Spinner, StatCard, pct, signedPct } from "../components/ui";
+import { Card, Empty, HowToRead, Md, Note, Pill, Seg, Spinner, StatCard, pct } from "../components/ui";
 import { useProjectId } from "../context";
+import { CatLink, CategoryTable } from "../components/Facets";
+import { FACET_META, FACET_ORDER, useCatalogue, type FacetKey } from "../facets";
 import { EntryRoutes, Lasting, ReadThisFirst, SurveyGaps } from "../components/Orientation";
 import { ToolsToLearn } from "../components/Discovery";
 
@@ -69,6 +71,38 @@ const TRUST = `| View | Verdict on the pilot | Backed by |
 
 Every result table, including the experiments that did not work, is in **Experiments**.`;
 
+/** The field by facet: problems (the communities), methods, innovations, results and limitations. */
+function FacetsCard({ p, T }: { p: string; T: number }) {
+  const cat = useCatalogue(p);
+  const [facet, setFacet] = useState<FacetKey>("problem");
+  const b = cat.facet.get(facet);
+  const M = FACET_META[facet];
+  return (
+    <Card title="The field by facet" icon={<Layers className="size-4.5 text-brand-600" />}
+      subtitle={M.blurb}
+      actions={<Link to={`/p/${p}/explore/${facet}`} className="btn btn-sm">Explore {M.plural.toLowerCase()}</Link>}>
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {FACET_ORDER.map((f) => {
+          const I = FACET_META[f].icon;
+          return (
+            <button key={f} onClick={() => setFacet(f)} className={clsx("btn btn-sm", f === facet && "!border-transparent !bg-[var(--chip)] !text-[var(--chip-text)]")}>
+              <I className="size-3.5" style={{ color: FACET_META[f].color }} /> {f === "problem" ? "Communities" : FACET_META[f].plural}
+              <span className="faint text-[11px]">{cat.facet.get(f)?.categories.length ?? ""}</span>
+            </button>
+          );
+        })}
+      </div>
+      {!cat.data ? <Spinner /> : b ? (
+        <CategoryTable block={b} y0={cat.data.y0} t1={Math.max(cat.data.y0, T - 2)} t2={T} sparkFrom={Math.max(cat.data.y0, T - 9)} maxHeight={380} />
+      ) : <div className="muted text-[13px]">No categories for this facet.</div>}
+      <Note>{facet === "problem" ? "Problem communities" : `${M.label} categories`} (◇ = hub: a large, coherent body of work with a shifting boundary), {T - 2}–{T} against the three years before. Select one for its details sheet: papers, trend, and how it relates to the other facets. Share changes describe this map as sampled; they are not a forecast.</Note>
+    </Card>
+  );
+}
+
+const SECTIONS: [string, string][] = [["facets", "Facets"], ["borrow", "Borrowing"], ["read", "Read now"], ["paths", "Read this first"],
+  ["tools", "Tools"], ["surveys", "Surveys"], ["opps", "Opportunities"], ["waves", "Second waves"], ["trust", "Trust"]];
+
 export function StartHere() {
   const p = useProjectId();
   const { data: d, isLoading } = useApi<any>(`/p/${p}/overview`);
@@ -90,6 +124,12 @@ export function StartHere() {
   return (
     <div className="mx-auto max-w-[1500px]">
       <PageHeader title="Start here" sub={<>As of {T} (the latest complete publication year) · built {d.built_at.slice(0, 16).replace("T", " ")}</>} />
+      <nav className="scroll-thin sticky top-[60px] z-20 -mx-1 mb-4 flex gap-1 overflow-x-auto bg-[var(--bg)]/90 px-1 py-2 backdrop-blur">
+        {SECTIONS.map(([id, l]) => (
+          <a key={id} href={`#${id}`} className="chip shrink-0 !bg-[var(--surface)] !text-[var(--text)] ring-1 ring-[var(--line)] hover:!text-brand-600"
+            onClick={(e) => { const el = document.getElementById(id); if (el) { e.preventDefault(); el.scrollIntoView({ behavior: "smooth", block: "start" }); } }}>{l}</a>
+        ))}
+      </nav>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={<BookOpen className="size-4.5" />} label="Papers in the map" value={m.papers.toLocaleString()} spark={m.papers_by_year.map((r: any) => r.n)} hint="Papers per year (last 15 years)" />
         <StatCard icon={<CalendarRange className="size-4.5" />} tone="green" label="Publication years" value={`${m.year_lo}–${m.year_hi}`} sub={<span className="muted">95% of papers</span>} hint={`The oldest reference is from ${m.year_min}; ${m.year_hi} is a partial year.`} />
@@ -105,20 +145,10 @@ export function StartHere() {
           `- **Not covered:** most references point outside the map; the ${(m.external_works ?? 0).toLocaleString()} external works cited at least 5 times are tracked separately (below). Nothing here predicts citations from all of science, or where a brand-new community will form.`}</Md>
       </details>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_1fr]">
-        <Card title="The communities" icon={<Layers className="size-4.5 text-brand-600" />} actions={<Link to={`/p/${p}/map`} className="btn btn-sm">Open the map</Link>}>
-          <DataTable rows={d.communities} maxHeight={380} rowKey={(r) => r.cluster_id} cols={[
-            { key: "label", label: "Community", render: (r) => <span className="text-[var(--text-strong)]">{r.label}{r.kind === "hub" && <span className="faint"> ◇</span>}</span> },
-            { key: "size", label: "Papers", align: "right" },
-            { key: "series", label: `${T - 9}–${T}`, sortable: false, render: (r) => <Sparkline values={r.series} width={80} height={22} fill={false} /> },
-            { key: "recent", label: `${T - 2}–${T}`, align: "right" },
-            { key: "share_now", label: "Share now", align: "right", render: (r) => pct(r.share_now, 1) },
-            { key: "change", label: "vs 3 yrs before", align: "right", render: (r) => <span className={clsx(r.change > 0.005 ? "text-emerald-600" : r.change < -0.005 ? "text-red-600" : "muted")}>{signedPct(r.change)}</span> },
-          ]} />
-          <Note>Problem communities (◇ = hub: a large, coherent body of work with a shifting boundary). The share change describes this map as sampled; it is not a forecast.</Note>
-        </Card>
+      <div id="facets" className="mt-5 grid scroll-mt-28 gap-5 xl:grid-cols-[1.4fr_1fr]">
+        <FacetsCard p={p} T={T} />
         {d.import_map && (
-          <Card title="Where this field borrows from" icon={<Telescope className="size-4.5 text-brand-600" />}>
+          <Card title="Where this field borrows from" icon={<Telescope className="size-4.5 text-brand-600" />} className="scroll-mt-28" >
             <Plot height={380} data={[
               { type: "bar", orientation: "h", y: [...d.import_map.rows].reverse().map((r: any) => r.subfield), x: [...d.import_map.rows].reverse().map((r: any) => r.share_early), name: d.import_map.early_years, marker: { color: "#c9cdd2" } },
               { type: "bar", orientation: "h", y: [...d.import_map.rows].reverse().map((r: any) => r.subfield), x: [...d.import_map.rows].reverse().map((r: any) => r.share_recent), name: d.import_map.recent_years, marker: { color: "#1f6ad6" } },
@@ -128,17 +158,18 @@ export function StartHere() {
         )}
       </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-2">
+      <div id="borrow" className="mt-5 grid scroll-mt-28 gap-5 xl:grid-cols-2">
         <Card title="Being imported now" icon={<Globe2 className="size-4.5 text-orange-600" />}>
           <DataTable rows={d.imported_now ?? []} rowKey={(r) => r.paper_id} cols={[
             { key: "title", label: "Work", render: (r) => <a href={`https://openalex.org/${r.paper_id}`} target="_blank" rel="noreferrer" className="hover:text-brand-600">{r.title}</a> },
             { key: "subfield", label: "Subfield" },
             { key: "recent_citers", label: "Citing here", align: "right" },
-            { key: "cluster_label", label: "Closest community" },
+            { key: "cluster_label", label: "Closest community", render: (r) => <CatLink cid={r.cluster_id} label={r.cluster_label} /> },
           ]} empty="Not built: run `external` and `portfolio`." />
           <Note>Recent works from outside the field that this field cites more and more ({T - 2}–{T}), ranked by the experiment-6 model. More in Map & grid › Bridges › From outside the field.</Note>
         </Card>
-        <Card title="Read now" icon={<BookOpen className="size-4.5 text-brand-600" />}>
+        <Card title="Read now" icon={<BookOpen className="size-4.5 text-brand-600" />} className="scroll-mt-28">
+          <span id="read" className="block scroll-mt-28" />
           <ol className="flex flex-col">
             {d.read_now.map((r: any) => (
               <li key={r.paper_id} className="flex gap-3 border-b border-[var(--line)] py-2 text-[13px] last:border-0">
@@ -152,7 +183,7 @@ export function StartHere() {
       </div>
 
       {(d.reading_paths || d.entry_routes) && (
-        <div className="mt-5 grid gap-5 xl:grid-cols-2">
+        <div id="paths" className="mt-5 grid scroll-mt-28 gap-5 xl:grid-cols-2">
           {d.reading_paths && (
             <Card title="Read this first" icon={<Library className="size-4.5 text-brand-600" />} subtitle="Per community: its classics and the sources of its current methods">
               <ReadThisFirst rows={d.reading_paths} />
@@ -166,12 +197,14 @@ export function StartHere() {
         </div>
       )}
 
+      <span id="tools" className="block scroll-mt-28" />
       {d.tools?.rows?.length > 0 && (
         <Card className="mt-5" title="Tools to learn" icon={<Wrench className="size-4.5 text-emerald-600" />} subtitle="Per community: settled methods first, then the ones still changing">
           <ToolsToLearn data={d.tools} />
         </Card>
       )}
 
+      <span id="surveys" className="block scroll-mt-28" />
       {d.survey_gaps && d.survey_gaps.some((r: any) => r.status === "survey gap" || r.status === "thin") && (
         <Card className="mt-5" title="Where a survey is missing" icon={<BookOpen className="size-4.5 text-amber-600" />}
           subtitle={`Communities whose share of surveys (${d.survey_gaps[0]?.window}) is well below the field's`}>
@@ -179,6 +212,7 @@ export function StartHere() {
         </Card>
       )}
 
+      <span id="opps" className="block scroll-mt-28" />
       <Card className="mt-5" title="Opportunities to inspect" icon={<Sparkles className="size-4.5 text-brand-600" />}
         actions={<Seg size="sm" value={opp} onChange={setOpp} options={[
           { value: "gems", label: "Hidden gems" }, { value: "lim", label: "Limitation → innovation" },
@@ -211,6 +245,7 @@ export function StartHere() {
         </>) : <div className="muted text-[13px]">Run the research lab to add these.</div>)}
       </Card>
 
+      <span id="waves" className="block scroll-mt-28" />
       {d.second_waves.length > 0 && (
         <Card className="mt-5" title="Second waves: ideas reaching new audiences" icon={<Waves className="size-4.5 text-brand-600" />}
           actions={<Seg size="sm" value={wave} onChange={setWave} options={[{ value: "paper", label: "Papers in the map" }, { value: "external", label: "From outside" }, { value: "method", label: "Methods" }]} />}>
@@ -219,12 +254,12 @@ export function StartHere() {
         </Card>
       )}
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-2">
+      <div id="trust" className="mt-5 grid scroll-mt-28 gap-5 xl:grid-cols-2">
         {d.coverage_gaps && (
           <Card title="Coverage gaps" icon={<Gem className="size-4.5 text-violet-600" />}>
             <DataTable rows={d.coverage_gaps} cols={[
               { key: "title", label: "Work", render: (r) => <a href={`https://openalex.org/${r.paper_id}`} target="_blank" rel="noreferrer" className="hover:text-brand-600">{r.title}</a> },
-              { key: "year", label: "Year" }, { key: "recent_citers", label: "Citing here", align: "right" }, { key: "cluster_label", label: "Community" },
+              { key: "year", label: "Year" }, { key: "recent_citers", label: "Citing here", align: "right" }, { key: "cluster_label", label: "Community", render: (r) => <CatLink cid={r.cluster_id} label={r.cluster_label} /> },
             ]} />
             <Note>Works this field cites heavily that are not in the map: often core papers the seed's citation graph never reached. Adding them (a new seed or a corpus expansion) makes every view more complete.</Note>
           </Card>

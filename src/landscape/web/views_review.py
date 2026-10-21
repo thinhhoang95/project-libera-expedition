@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 
 from .. import jobs
+from . import views_facets
 from .data import Router, jl, memo, q, records, run_params
 
 router = Router()
@@ -36,6 +37,8 @@ def paper_card(p: str, pid: str) -> dict:
     f = q("SELECT facet, text FROM facets WHERE paper_id = ?", (pid,)).drop_duplicates("facet").set_index("facet").text
     out["facets"] = [{"facet": k, "text": f[k]} for k in FACET_ORDER if k in f.index and isinstance(f[k], str)]
     out["link"] = f"https://doi.org/{out['doi']}" if out.get("doi") else f"https://openalex.org/{pid}"
+    out["categories"] = views_facets.categories_of(p, pid)
+    out["citations"] = views_facets.citations_of(p, pid) if out.get("route") else None
     return out
 
 

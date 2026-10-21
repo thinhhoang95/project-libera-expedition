@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CommunityPicker } from "./Facets";
 import { PaperLink } from "./PaperDrawer";
 import { HowToRead, Note, Pill } from "./ui";
 
@@ -91,9 +92,7 @@ export function ToolsToLearn({ data, picker = true }: { data: { rows: any[]; evi
   return (
     <div>
       {picker && clusters.length > 1 && (
-        <select className="select mb-2" value={c} onChange={(e) => setC(e.target.value)}>
-          {clusters.map(([id, l]) => <option key={id} value={id}>{l}</option>)}
-        </select>
+        <CommunityPicker value={c} onChange={setC} options={clusters} />
       )}
       <ToolsList rows={rows} />
       <Note>Method communities this community used in {rows[0]?.recent_years}. <b>Settled</b> tools are used broadly, with few competing variants and little innovation on the tool itself; <b>in flux</b> ones are still changing.</Note>

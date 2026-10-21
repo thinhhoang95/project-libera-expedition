@@ -55,7 +55,9 @@ cd web && npm install && npm run build && cd ..
 uv run landscape serve                         # http://127.0.0.1:8600
 ```
 
-The app is organized by projects (one field each). It shows every view of the explorer, and its job
+The app is organized by projects (one field each). Every facet (problem, method, innovation, result,
+limitations) has browsable categories, each with a details sheet: its papers, its trend, and how it relates
+to the other facets in any time window. It shows every view of the explorer, and its job
 queue runs the whole pipeline with progress you can pause and resume. Pages stay usable while a step
 runs, because the app reads a copy of the database published after each step. See
 [11-web-app.md](docs/features/11-web-app.md).

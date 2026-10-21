@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, qs, useApi, type Job, type Project } from "../api";
 import { DataTable } from "../components/DataTable";
+import { CatLink } from "../components/Facets";
 import { PaperLink, ReviewBar } from "../components/PaperDrawer";
 import { Card, ErrorBox, HowToRead, Note, Pill, Spinner, StatCard } from "../components/ui";
 import { SecondWavesTable, SECOND_WAVES_HOW } from "./StartHere";
@@ -253,7 +254,8 @@ function WarmTable({ d, selected, onSelect, limit }: { d: MP; selected: string |
             {r.cluster_id === selected && <svg viewBox="0 0 12 12" className="size-2.5"><path d="M2 6l3 3 5-6" fill="none" stroke="currentColor" strokeWidth="2" /></svg>}
           </span>) },
         { key: "rank", label: "#", width: 36 },
-        { key: "community", label: "Community", render: (r) => <span className="text-[var(--text-strong)]">{r.community}{r.kind === "hub" && <span className="faint" title="hub: a large, coherent body of work with a shifting boundary"> ◇</span>}</span> },
+        { key: "community", label: "Community", render: (r) => <span className="text-[var(--text-strong)]">{r.community}{r.kind === "hub" && <span className="faint" title="hub: a large, coherent body of work with a shifting boundary"> ◇</span>}
+          <CatLink cid={r.cluster_id} className="faint ml-1.5 text-[11.5px]">details</CatLink></span> },
         { key: "warmth", label: "Warmth", width: 150, render: (r) => (
           <span className="flex items-center gap-2">
             <span className="h-[7px] w-[72px] overflow-hidden rounded-full bg-[var(--line)]"><span className="block h-full rounded-full bg-brand-500" style={{ width: `${r.warmth * 100}%` }} /></span>
@@ -389,7 +391,7 @@ function PaperView({ pid }: { pid: string }) {
             >
               <WarmTable d={d} selected={selected} onSelect={setSel} limit={10} />
               <Note>
-                {d.home && <>Home community: <b>{d.home.label}</b>. </>}
+                {d.home && <>Home community: <CatLink cid={d.home.cluster_id} className="font-semibold">{d.home.label}</CatLink>. </>}
                 {d.already_citing.length > 0 && <>Already citing it: {d.already_citing.join(", ")}. </>}
                 Ranked by the community-warmth model (experiment 10): among communities that do not cite a paper yet, a top-3 community went on to cite it within three years for 69% of papers (25% at random). <b>Content fit</b> is the similarity of your innovation to the community's problems.
               </Note>

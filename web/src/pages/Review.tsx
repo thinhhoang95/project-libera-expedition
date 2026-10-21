@@ -2,6 +2,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { ChevronLeft, ChevronRight, DollarSign, FileWarning, Layers3, Library } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { CatLink } from "../components/Facets";
 import { api, qs, useApi } from "../api";
 import { DataTable } from "../components/DataTable";
 import { PageHeader } from "../components/Layout";
@@ -160,12 +162,13 @@ export function ClusterReview() {
   const p = useProjectId();
   const { reviewer } = useReviewer();
   const qc = useQueryClient();
-  const [facet, setFacet] = useState("problem");
-  const [alphaRaw, setAlpha] = useState(0.3);
-  const [res, setRes] = useState("medium");
+  const [sp] = useSearchParams(); // opened from a details sheet: ?facet=&alpha=&res=&sel=
+  const [facet, setFacet] = useState(sp.get("facet") ?? "problem");
+  const [alphaRaw, setAlpha] = useState(sp.get("alpha") ? Number(sp.get("alpha")) : 0.3);
+  const [res, setRes] = useState(sp.get("res") ?? "medium");
   const alpha = GLOSS.has(facet) ? alphaRaw : 0;
   const { data: cl } = useApi<any[]>(`/p/${p}/clusters` + qs({ facet, alpha, res }));
-  const [sel, setSel] = useState<string | null>(null);
+  const [sel, setSel] = useState<string | null>(sp.get("sel"));
   const r = cl?.find((c) => c.cluster_id === sel);
   const { data: det } = useApi<any>(sel ? `/p/${p}/clusters/${encodeURIComponent(sel)}` + qs({ facet, alpha, res }) : null, { staleTime: 0 });
   const [action, setAction] = useState("approve");
@@ -196,7 +199,8 @@ export function ClusterReview() {
           <Note>stable: Jaccard ≥ 0.6 across 5 Leiden seeds. hub: unstable boundary but large and coherent; kept and reported separately. unstable: papers unassigned downstream.</Note>
         </Card>
         {r ? (
-          <Card title={<span><span style={{ color: r.color }}>● </span>{r.label}</span>} subtitle={`${r.cluster_id} · labelled by ${r.label_model ?? "—"} · parent ${r.parent_cluster_id ?? "—"}`}>
+          <Card title={<span><span style={{ color: r.color }}>● </span>{r.label}</span>} subtitle={`${r.cluster_id} · labelled by ${r.label_model ?? "—"} · parent ${r.parent_cluster_id ?? "—"}`}
+            actions={<CatLink cid={r.cluster_id} className="btn btn-sm !no-underline">Details sheet</CatLink>}>
             {r.description && <p className="text-[13px]">{r.description}</p>}
             <div className="mt-2 text-[13px]"><b>{r.size} papers · stability {r.stability?.toFixed(2)}</b></div>
             <div className="mt-1.5 flex flex-wrap gap-1">{(r.top_terms ?? []).map((t: string) => <Pill key={t}>{t}</Pill>)}</div>

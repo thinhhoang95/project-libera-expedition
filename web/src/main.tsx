@@ -4,9 +4,10 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { api } from "./api";
 import { Layout } from "./components/Layout";
-import { DrawerProvider, ReviewerProvider } from "./context";
+import { ReviewerProvider } from "./context";
 import "./index.css";
 import { Experiments } from "./pages/Experiments";
+import { Explore } from "./pages/Explore";
 import { MapGrid } from "./pages/MapGrid";
 import { MyPaper } from "./pages/MyPaper";
 import { NewProject } from "./pages/NewProject";
@@ -35,7 +36,6 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={qc}>
       <ReviewerProvider>
-        <DrawerProvider>
           <BrowserRouter>
             <Routes>
               <Route element={<Layout />}>
@@ -47,6 +47,8 @@ createRoot(document.getElementById("root")!).render(
                   <Route path="start" element={<P><StartHere /></P>} />
                   <Route path="paper" element={<P><MyPaper /></P>} />
                   <Route path="paper/:pid" element={<P><MyPaper /></P>} />
+                  <Route path="explore" element={<P><Explore /></P>} />
+                  <Route path="explore/:facet" element={<P><Explore /></P>} />
                   <Route path="map" element={<P><MapGrid /></P>} />
                   <Route path="lab" element={<P><ResearchLab /></P>} />
                   <Route path="experiments" element={<P><Experiments /></P>} />
@@ -59,7 +61,6 @@ createRoot(document.getElementById("root")!).render(
               </Route>
             </Routes>
           </BrowserRouter>
-        </DrawerProvider>
       </ReviewerProvider>
     </QueryClientProvider>
   </StrictMode>,
