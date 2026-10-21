@@ -1,6 +1,6 @@
 # Experiments: orientation for choosing a direction and what to read (Phase 10)
 
-Status: experiments 12-14 done (no product change yet) · Scripts: `scripts/phase10/` · Results: Experiments view (`data/projects/<run>/backtest/experiments/`) · Pilot: `dro-pilot`
+Status: experiments 12-16 done (no product change yet) · Scripts: `scripts/phase10/` · Results: Experiments view (`data/projects/<run>/backtest/experiments/`) · Pilot: `dro-pilot`
 
 These experiments ask what helps someone **orient**: how to enter a community, what to read first, and which ideas
 last. None is an outcome-prediction model. Each tests a simple, readable rule against simple alternatives, on
@@ -18,6 +18,8 @@ cd scripts/phase10
 uv run --no-sync python exp12_entry.py    [--run-id dro-pilot]   # ~20 s
 uv run --no-sync python exp13_reading.py  [--run-id dro-pilot]   # ~35 s
 uv run --no-sync python exp14_durable.py  [--run-id dro-pilot]   # ~10 s
+uv run --no-sync python exp15_lifecycle.py [--run-id dro-pilot]   # ~8 s
+uv run --no-sync python exp16_open_questions.py [--run-id dro-pilot]   # ~20 s
 ```
 
 - **Self-contained:** the scripts use `scripts/phase10/common.py`, not the `landscape` package, and read the
@@ -146,6 +148,137 @@ among equally generic ideas (genericness quintiles):
 - Only two publication years; the corpus is thin before 2018.
 - Use is measured by closeness of wording within the map.
 - Five to seven years is still short for the slow-burning ideas the novelty finding may be missing.
+
+## 15. Community lifecycle: what kind of contribution is wanted now
+
+**Question.** Fields are often said to move from theory to methods to applications. Where is each community in
+that cycle, and is the kind of work it lacks taken up more?
+
+**Kinds of contribution**, from each paper's extracted facets:
+
+| Kind | Definition | Papers |
+| --- | --- | --- |
+| theory | contribution type *theory* | 795 |
+| applied method | method (or application, dataset, benchmark) naming an application domain or data | 2,579 |
+| generic method | method naming no domain or data | 615 |
+| survey | contribution type *survey* | 469 |
+
+About 20% of papers also report a quantitative result (*empirical*). A manual read of 36 abstracts (stratified by
+label) agreed with the label in about 89% of cases. "Application" alone is rare here, because applied engineering
+papers are labelled *method*; hence the applied / generic split by the named domain.
+
+**Setup.** Problem communities (α 0.5, medium) of the cutoff runs, 2019–2022. Mixes over T−2…T ("before") and
+T+1…T+3 ("after"), for communities with at least 10 papers in each window (75 community-cutoffs).
+
+### A. Does a community's stage predict its next mix?
+
+Each kind's share after was predicted three ways:
+- **persistence:** no change;
+- **field drift:** the community moves like the whole field;
+- **lifecycle:** the change depends on the community's own mix (ridge, leave-one-cutoff-out).
+
+| Kind | MAE persistence | MAE field drift | MAE lifecycle | Lifecycle − field drift (90% CI) |
+| --- | --- | --- | --- | --- |
+| theory | 0.043 | 0.046 | 0.048 | +0.002 [+0.000, +0.004] (worse) |
+| applied method | 0.059 | 0.056 | 0.056 | −0.000 [−0.004, +0.003] |
+| generic method | 0.060 | 0.056 | 0.051 | **−0.005 [−0.008, −0.002]** |
+| survey | 0.039 | 0.038 | 0.037 | −0.002 [−0.004, +0.000] |
+| all kinds | 0.050 | 0.049 | 0.048 | −0.001 [−0.003, +0.000] |
+
+- **Weak overall:** a community's own stage adds little to the field-wide drift.
+- **One transition holds.** Communities heavy in **generic methods** gain **applied methods** afterwards (coefficient
+  +0.09) and lose generic methods (−0.19). Theory-heavy communities gain generic methods (+0.09).
+- **The sequence:** theory → generic method → applied method, visible but small.
+
+### B. Do "theory wanted" gaps get theory?
+
+Method communities whose use is growing and empirical but which have few theory papers (top quarter of that gap;
+21 of 77 method community-cutoffs) were compared with method communities of the same theory share and size. Their
+theory share changed by −0.006 [−0.020, +0.008] relative to those. **Not supported:** theory does not flow to where
+it looks missing, at least not within three years.
+
+### C. Is the scarce kind of contribution taken up more?
+
+A paper's kind is **scarce** in its community when the community's share of that kind (T−2…T) is under half the
+field's. Scarce papers are compared with papers of the same kind where it is common, on three outcomes:
+- **taken up by others:** non-self citations in the top quarter of year-T papers;
+- **peer-normalized uptake:** the same, relative to the paper's 15 nearest same-year papers;
+- **the community moving towards it:** experiment 9's measure.
+
+Intervals resample communities.
+
+| Scarce kind | Papers | Taken up: scarce vs common | Peer-normalized | Community moved towards it |
+| --- | --- | --- | --- | --- |
+| **survey** | 19 of 249 | **47% vs 10%, +0.38 [+0.16, +0.54]** | **+0.31 [+0.07, +0.49]** | −0.06 [−0.24, +0.12] |
+| theory | 18 of 385 | 6% vs 19%, −0.13 [−0.24, +0.03] | −0.15 [−0.29, +0.15] | −0.10 [−0.22, +0.03] |
+| generic method | 33 of 314 | −0.03 [−0.17, +0.09] | −0.03 [−0.15, +0.07] | +0.09 [+0.005, +0.16] |
+| applied method | 40 of 1,480 | −0.02 [−0.20, +0.12] | −0.08 [−0.20, +0.01] | −0.08 [−0.27, +0.03] |
+
+**The survey gap is robust.** It holds at every cut of "scarce" and grows the scarcer surveys are:
+
+| Scarce if the community's survey share is below | Scarce surveys | Taken up: difference (90% CI) |
+| --- | --- | --- |
+| 1.0× the field's | 79 | +0.11 [+0.01, +0.21] |
+| 0.75× | 38 | +0.26 [+0.11, +0.40] |
+| 0.5× | 19 | +0.38 [+0.16, +0.54] |
+
+What it says:
+1. **A survey written where a community lacks one is read much more**, by others and against its nearest peers. It
+   is cited, not built on: the community's methods do not move towards it. That fits experiment 13, where newcomers
+   did not *build on* surveys.
+2. **Scarcity does not help other kinds.** A rare theory paper in an applied community fares no better, perhaps
+   worse (few cases).
+3. **Generic methods** in communities that have few of them draw a little more convergence from the community's
+   later work.
+
+**Product use (when the portfolio files are free):** a *survey gap* marker per community. It is the one
+"what is missing here" signal with like-for-like, dose-response evidence. The lifecycle mix itself is descriptive,
+with the one transition above.
+
+## 16. Long-standing open questions
+
+**Question.** Which questions keep being asked without an answer that ends them?
+
+**Question groups.** For each cutoff T (2019–2022), using statements up to T only:
+- problem statements (problem facet, 256-d) from 2010…T, one record per normalized title, grouped by average
+  linkage at cosine 0.93 (just above the 99.9th percentile of random pairs, 0.923);
+- each group needs at least 3 statements, at least 2 distinct years, and at least 2 papers with no author in common;
+- the most generic fifth is dropped.
+
+Groups read as one question asked by different people: unit commitment under wind uncertainty, the newsvendor with
+partial demand information, composite convex minimization. 211 question groups are active (asked in T−2…T)
+across the four cutoffs. **Still asked** means a statement in T+1…T+3 joins the group (mean cosine to its members
+≥ 0.93).
+
+### Whether a question was answered cannot be read from abstracts
+
+The test looked at innovation statements from outside the group (by other teams) against the askers' own:
+- for the median question, the closest outside innovation (cosine 0.926) is *closer* to the question than the
+  askers' own innovations (0.906);
+- 64% of questions have an outside "attempt" above the 99.99th percentile of random pairs.
+
+Closeness of wording does not certify an answer, so open versus closed cannot be classified this way.
+
+### What does predict a question being asked again
+
+| Label | Labelled | Still asked if labelled | Otherwise | Matched difference (same size and recent activity) |
+| --- | --- | --- | --- | --- |
+| standing (first asked 4+ years before, by 3+ unrelated teams) | 34 of 211 | 50% | 55% | +0.04 [−0.16, +0.25] |
+| asked by more unrelated teams than the median | 169 of 211 | 58% | 38% | +0.11 [−0.01, +0.27] |
+
+| Model (leave-one-cutoff-out) | AUC | Gain over base (90% CI) |
+| --- | --- | --- |
+| age + size + recent recurrence | 0.644 | — |
+| + number of unrelated teams asking | 0.655 | +0.011 [−0.006, +0.028] |
+| + standing label | 0.599 | −0.045 [−0.105, +0.016] |
+
+- **Not demonstrated.** Recent activity and size predict whether a question is asked again (AUC 0.64). Neither the
+  "standing" label nor the breadth of askers adds significantly, though breadth leans positive.
+- **The recurring-question list** (53 questions asked by 3+ unrelated teams, as of 2025) is written to
+  `data/projects/<run>/backtest/exp16_recurring_questions.parquet` for inspection. It is **not used by the
+  product**.
+
+Scripts: `exp15_lifecycle.py` (~8 s), `exp16_open_questions.py` (~20 s).
 
 ## In the product portfolio
 
