@@ -85,6 +85,9 @@ def create_app(worker: bool | None = None) -> FastAPI:
 
         @app.get("/{path:path}", include_in_schema=False)
         def spa(path: str):
+            # an unknown API path is a 404, not the app shell (the client would choke parsing HTML as JSON)
+            if path == "api" or path.startswith("api/"):
+                return JSONResponse({"detail": f"No API route /{path}"}, 404)
             f = DIST / path
             if path and f.is_file() and DIST in f.resolve().parents:
                 return FileResponse(f)

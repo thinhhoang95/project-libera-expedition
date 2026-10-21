@@ -9,6 +9,7 @@ import { PageHeader } from "../components/Layout";
 import { Card, ErrorBox, Pill, Spinner } from "../components/ui";
 import { useProjectId } from "../context";
 import { spendTotal } from "./Projects";
+import { toast } from "../components/Toasts";
 
 type Catalog = { steps: { name: string; label: string; phase: string; about: string; optional: boolean }[]; templates: Record<string, string[]> };
 
@@ -55,7 +56,10 @@ export function StepPicker({ catalog, selected, setSelected, built, wide }: {
 function Snapshots({ p }: { p: string }) {
   const qc = useQueryClient();
   const { data } = useApi<any[]>(`/p/${p}/snapshots`);
-  const done = () => qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/jobs") });
+  const done = (j: Job) => {
+    toast({ title: `Queued: ${j.title}`, tone: "success" });
+    qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/jobs") });
+  };
   const freeze = useMutation({ mutationFn: () => api<Job>("/jobs", { method: "POST", json: { project: p, steps: ["freeze-snapshot"] } }), onSuccess: done });
   const score = useMutation({
     mutationFn: ({ date, months }: { date: string; months: number }) => api<Job>(`/p/${p}/snapshots/${date}/score`, { method: "POST", json: { months } }),
@@ -116,7 +120,8 @@ export function Pipeline() {
   const [custom, setCustom] = useState<string[] | null>(null);
   const queue = useMutation({
     mutationFn: (body: any) => api<Job>("/jobs", { method: "POST", json: { project: p, ...body } }),
-    onSuccess: () => {
+    onSuccess: (j) => {
+      toast({ title: `Queued: ${j.title}`, body: j.queue_position ? `Position ${j.queue_position} in the pipeline lane` : "Starts when the pipeline lane is free", tone: "success" });
       setCustom(null);
       qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/jobs") || String(q.queryKey[0]).startsWith("/projects") });
     },

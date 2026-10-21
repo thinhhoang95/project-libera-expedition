@@ -1,19 +1,22 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
-  ArrowRight, BookOpen, Calendar, DoorOpen, Gauge, Landmark, Library, MapPinned, Wrench, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, Flame, HelpCircle,
+  ArrowRight, BookOpen, Calendar, Clock, DoorOpen, Gauge, Landmark, Library, MapPinned, Wrench, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, Flame, HelpCircle,
   Lightbulb, Link2, Loader2, Network, Quote, Search, Tag, Target, Users, Waves,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, qs, useApi, type Job, type Project } from "../api";
-import { DataTable } from "../components/DataTable";
+import { DataTable, downloadCsv } from "../components/DataTable";
 import { CatLink } from "../components/Facets";
+import { usePaperMeta } from "../components/Sort";
+import { getRecents } from "../context";
 import { PaperLink, ReviewBar } from "../components/PaperDrawer";
 import { Card, ErrorBox, HowToRead, Note, Pill, Spinner, StatCard } from "../components/ui";
 import { SecondWavesTable, SECOND_WAVES_HOW } from "./StartHere";
 import { EntryRoutes, Lasting, ReadingPath, SurveyGaps } from "../components/Orientation";
 import { CrowdingGauge, QuietFoundations, ToolsToLearn, UntriedApplications } from "../components/Discovery";
+import { FadePill, StatusPill } from "../components/Timing";
 
 type Warm = { rank: number; cluster_id: string; community: string; kind: string; warmth: number; content_fit: number; why: string[] };
 type MP = {
@@ -28,7 +31,8 @@ type MP = {
     references: number; refs_in_map: number; warm_candidates: number; already_citing: number };
   limitations: { paper_id: string; limitation: string; title: string; year: number; first_author: string | null; closeness: number }[];
   outside: { paper_id: string; title: string; subfield: string; fit: number; recent_citers: number; year: number }[];
-  bring_in: { paper_id: string; title: string; year: number | null; list: string; fit: number | null }[];
+  bring_in: { paper_id: string; title: string; year: number | null; list: string; fit: number | null; status: string | null;
+    age: number | null; cites: number | null }[];
   methods: { method: string; judge: number | null }[];
   early_work: { paper_id: string; title: string; year: number | null; closeness: number }[];
   second_waves: any[];
@@ -47,18 +51,6 @@ type MP = {
 
 const TYPE_LABEL: Record<string, string> = { article: "Journal article", preprint: "Preprint", "book-chapter": "Book chapter", review: "Review", dissertation: "Dissertation" };
 const TABS = ["Overview", "Related papers", "Communities", "Ideas & insights", "Papers to bring in"] as const;
-
-function downloadCsv(name: string, rows: Record<string, any>[]) {
-  if (!rows.length) return;
-  const cols = Object.keys(rows[0]);
-  const esc = (v: any) => `"${String(Array.isArray(v) ? v.join("; ") : v ?? "").replace(/"/g, '""')}"`;
-  const blob = new Blob([[cols.join(","), ...rows.map((r) => cols.map((c) => esc(r[c])).join(","))].join("\n")], { type: "text/csv" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
 
 // ------------------------------------------------------------------ picking a paper
 
@@ -103,22 +95,53 @@ function AnalyseByDoi({ compact }: { compact?: boolean }) {
   );
 }
 
-function FindInMap({ onPick }: { onPick: (pid: string) => void }) {
+/** Papers worth analysing without typing: the ones opened lately here, then the field's "read now" list. */
+function Suggestions({ onPick }: { onPick: (pid: string) => void }) {
+  const { project } = useParams();
+  const recent = getRecents(project ?? "").filter((r) => r.kind === "paper").slice(0, 5);
+  const { data: ov } = useApi<any>(project ? `/p/${project}/overview` : null);
+  const seen = new Set(recent.map((r) => r.id));
+  const read = ((ov?.read_now ?? []) as { paper_id: string; title: string }[]).filter((r) => !seen.has(r.paper_id)).slice(0, 5);
+  const group = (title: string, icon: React.ReactNode, rows: { id: string; label: string }[]) => rows.length > 0 && (
+    <div>
+      <div className="faint mb-1 flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">{icon}{title}</div>
+      {rows.map((r) => (
+        <button key={r.id} onClick={() => onPick(r.id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-[var(--surface-2)]">
+          <span className="min-w-0 flex-1 truncate">{r.label}</span><ArrowRight className="faint size-3.5 shrink-0" />
+        </button>
+      ))}
+    </div>
+  );
+  if (!recent.length && !read.length) return null;
+  return (
+    <div className="mt-3 flex flex-col gap-3">
+      {group("Opened recently", <Clock className="size-3" />, recent.map((r) => ({ id: r.id, label: r.label })))}
+      {group("Read now in this field", <BookOpen className="size-3" />, read.map((r) => ({ id: r.paper_id, label: r.title })))}
+    </div>
+  );
+}
+
+function FindInMap({ onPick, suggest }: { onPick: (pid: string) => void; suggest?: boolean }) {
   const { project } = useParams();
   const [term, setTerm] = useState("");
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    const h = setTimeout(() => setQ(term.trim()), 180); // search once typing pauses
+    return () => clearTimeout(h);
+  }, [term]);
   const { data, isFetching } = useApi<{ paper_id: string; year: number; title: string }[]>(
-    term.length >= 2 ? `/p/${project}/search` + qs({ term, limit: 40 }) : null,
+    q.length >= 2 ? `/p/${project}/search` + qs({ term: q, limit: 40 }) : null, { keep: true },
   );
+  const live = term.trim().length >= 2;
   return (
     <div>
       <div className="relative">
-        <Search className="faint absolute top-2.5 left-3 size-4" />
-        <input className="input pl-9" placeholder="Title contains… e.g. Wasserstein" value={term} onChange={(e) => setTerm(e.target.value)} />
+        {isFetching || (live && q !== term.trim()) ? <Loader2 className="faint absolute top-2.5 left-3 size-4 animate-spin" /> : <Search className="faint absolute top-2.5 left-3 size-4" />}
+        <input className="input pl-9" placeholder="Title contains… e.g. Wasserstein" value={term} onChange={(e) => setTerm(e.target.value)} aria-label="Search titles in the map" />
       </div>
-      {isFetching && <div className="muted mt-2 text-[12px]">Searching…</div>}
-      {data && (
+      {live && data && (
         <div className="scroll-thin mt-2 max-h-72 overflow-y-auto rounded-lg border border-[var(--line)]">
-          {data.length === 0 && <div className="muted px-3 py-3 text-[12.5px]">No title matches.</div>}
+          {data.length === 0 && <div className="muted px-3 py-3 text-[12.5px]">No title matches “{q}”.</div>}
           {data.map((h) => (
             <button key={h.paper_id} onClick={() => onPick(h.paper_id)} className="flex w-full gap-3 border-b border-[var(--line)] px-3 py-2 text-left text-[13px] last:border-0 hover:bg-[var(--surface-2)]">
               <span className="faint w-10 shrink-0">{h.year}</span>
@@ -127,6 +150,7 @@ function FindInMap({ onPick }: { onPick: (pid: string) => void }) {
           ))}
         </div>
       )}
+      {!live && suggest && <Suggestions onPick={onPick} />}
     </div>
   );
 }
@@ -196,7 +220,7 @@ function Picker() {
       )}
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <Card title="Find a paper in the map" icon={<Search className="size-4 text-brand-600" />}>
-          <FindInMap onPick={(pid) => nav(`/p/${project}/paper/${pid}`)} />
+          <FindInMap suggest onPick={(pid) => nav(`/p/${project}/paper/${pid}`)} />
           <Note>Papers need an extracted innovation statement to be scored.</Note>
         </Card>
         <Card title="Analyse a paper by DOI" icon={<Link2 className="size-4 text-brand-600" />}>
@@ -273,14 +297,18 @@ function Closest({ pid, source, cluster, label }: { pid: string; source: string;
   const { data, isLoading } = useApi<{ paper_id: string; year: number; title: string; closeness: number }[]>(
     cluster ? `/p/${project}/my-paper/${pid}/community/${encodeURIComponent(cluster)}` + qs({ source }) : null,
   );
+  const meta = usePaperMeta((data ?? []).map((r) => r.paper_id));
   return (
     <Card title="Its recent papers closest to yours" icon={<FileText className="size-4 text-brand-600" />} subtitle={label}>
       {!cluster && <div className="muted text-[12.5px]">Select a community.</div>}
       {isLoading && <Spinner />}
       {data && (
         <DataTable rows={data} dense rowKey={(r) => r.paper_id} cols={[
+          { key: "rank", label: "#", width: 30, value: (r: any) => data.indexOf(r), render: (r: any) => <span className="faint">{data.indexOf(r) + 1}</span>, title: "Closest to your innovation first" },
           { key: "year", label: "Year", width: 52 },
           { key: "title", label: "Title", render: (r) => <PaperLink pid={r.paper_id} title={r.title} className="line-clamp-2" /> },
+          { key: "here", label: "Cited here", align: "right", width: 64, value: (r) => meta[r.paper_id]?.cites_here, render: (r) => meta[r.paper_id]?.cites_here ?? "—" },
+          { key: "cites", label: "Overall", align: "right", width: 64, narrow: true, value: (r) => meta[r.paper_id]?.cites, render: (r) => meta[r.paper_id]?.cites?.toLocaleString() ?? "—" },
         ]} empty="No recent papers with an innovation statement." />
       )}
       <Note>Who to read, cite or contact in that community: its last four years, closest to your innovation.</Note>
@@ -289,12 +317,15 @@ function Closest({ pid, source, cluster, label }: { pid: string; source: string;
 }
 
 function Limitations({ d }: { d: MP }) {
+  const meta = usePaperMeta(d.limitations.map((r: any) => r.paper_id));
   return (
     <Card title="Whose stated problems it may answer" icon={<Target className="size-4.5 text-orange-600" />}
       actions={<HelpCircle className="faint size-4" />}>
       <DataTable rows={d.limitations} rowKey={(r) => r.paper_id} dense cols={[
         { key: "first_author", label: "Researcher", width: 150, render: (r) => <span className="text-[var(--text-strong)]">{r.first_author ?? "—"}</span> },
         { key: "limitation", label: "Stated problem", render: (r) => <span title={r.title}>{r.limitation}</span> },
+        { key: "year", label: "Year", width: 52, value: (r) => meta[r.paper_id]?.year, render: (r) => meta[r.paper_id]?.year ?? "—" },
+        { key: "here", label: "Cited here", align: "right", width: 64, value: (r) => meta[r.paper_id]?.cites_here, render: (r) => meta[r.paper_id]?.cites_here ?? "—" },
         { key: "go", label: "", width: 24, sortable: false, render: (r) => <PaperLink pid={r.paper_id} title="›" className="faint text-[16px]" /> },
       ]} empty="No innovation statement to compare." />
       <Note>Limitations stated in other papers' abstracts that are closest to your innovation. Few abstracts state limitations, and closeness of wording does not establish that the assumptions are compatible: candidates to read.</Note>
@@ -509,9 +540,12 @@ function PaperView({ pid }: { pid: string }) {
               { key: "year", label: "Year", width: 52 },
               { key: "title", label: "Paper", render: (r: any) => <span><PaperLink pid={r.paper_id} title={r.title} /><Lasting v={r.lasting} /></span> },
               { key: "list", label: "List", render: (r) => <Pill tone={r.list === "hidden gem" ? "violet" : "brand"}>{r.list}</Pill> },
+              { key: "status", label: "Status", render: (r) => (
+                <span className="flex flex-col items-start gap-0.5"><StatusPill s={r.status} /><FadePill age={r.age} cites={r.cites} /></span>
+              ) },
               { key: "fit", label: "Fit", align: "right" },
             ]} empty="No home community to draw the list from." />
-            <Note>Innovations your home community is likely to take up but does not cite yet (experiment 1), closest to your problem first; papers you already cite are left out.</Note>
+            <Note>Innovations your home community is likely to take up but does not cite yet (experiment 1), closest to your problem first; papers you already cite are left out. “Being taken”: the community's recent papers already say what the paper says (experiment 30).</Note>
           </Card>
         </div>
       )}

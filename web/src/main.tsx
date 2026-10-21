@@ -1,21 +1,28 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { StrictMode, useEffect } from "react";
+import { StrictMode, lazy, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { api } from "./api";
 import { Layout } from "./components/Layout";
 import { ReviewerProvider } from "./context";
 import "./index.css";
-import { Experiments } from "./pages/Experiments";
-import { Explore } from "./pages/Explore";
-import { MapGrid } from "./pages/MapGrid";
-import { MyPaper } from "./pages/MyPaper";
-import { NewProject } from "./pages/NewProject";
-import { Pipeline, Queue } from "./pages/Pipeline";
-import { Projects } from "./pages/Projects";
-import { ResearchLab } from "./pages/ResearchLab";
-import { ClusterReview, Corpus, FacetReview } from "./pages/Review";
-import { StartHere } from "./pages/StartHere";
+
+// pages load when first opened, so the first screen does not wait for every view (and Plotly) to parse
+const page = <K extends string>(load: () => Promise<Record<K, React.ComponentType>>, name: K) =>
+  lazy(() => load().then((m) => ({ default: m[name] })));
+const Experiments = page(() => import("./pages/Experiments"), "Experiments");
+const Explore = page(() => import("./pages/Explore"), "Explore");
+const MapGrid = page(() => import("./pages/MapGrid"), "MapGrid");
+const MyPaper = page(() => import("./pages/MyPaper"), "MyPaper");
+const NewProject = page(() => import("./pages/NewProject"), "NewProject");
+const Pipeline = page(() => import("./pages/Pipeline"), "Pipeline");
+const Queue = page(() => import("./pages/Pipeline"), "Queue");
+const Projects = page(() => import("./pages/Projects"), "Projects");
+const ResearchLab = page(() => import("./pages/ResearchLab"), "ResearchLab");
+const ClusterReview = page(() => import("./pages/Review"), "ClusterReview");
+const Corpus = page(() => import("./pages/Review"), "Corpus");
+const FacetReview = page(() => import("./pages/Review"), "FacetReview");
+const StartHere = page(() => import("./pages/StartHere"), "StartHere");
 
 const qc = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } });
 

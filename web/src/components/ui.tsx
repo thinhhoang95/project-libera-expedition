@@ -46,6 +46,30 @@ export function Spinner({ label }: { label?: string }) {
   );
 }
 
+/** A grey placeholder block that shimmers while content loads. */
+export function Skel({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return <div className={clsx("skel rounded-lg", className)} style={style} />;
+}
+
+/** The shape of a page while its data loads: a title, a row of stat cards and two cards. */
+export function PageSkeleton({ stats = true }: { stats?: boolean }) {
+  return (
+    <div className="mx-auto max-w-[1500px]" aria-busy="true" aria-label="Loading">
+      <Skel className="h-8 w-56" />
+      <Skel className="mt-2.5 h-3.5 w-96 max-w-full" />
+      {stats && (
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => <Skel key={i} className="h-[74px] rounded-[14px]" />)}
+        </div>
+      )}
+      <div className="mt-5 grid gap-5 xl:grid-cols-[1.4fr_1fr]">
+        <Skel className="h-[420px] rounded-[14px]" />
+        <Skel className="h-[420px] rounded-[14px]" />
+      </div>
+    </div>
+  );
+}
+
 export function Empty({ title, children, icon }: { title: ReactNode; children?: ReactNode; icon?: ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--line-strong)] px-6 py-10 text-center">
@@ -156,7 +180,7 @@ export function StatCard({ icon, tone, label, value, sub, spark, sparkColor, hin
     <div className="card flex items-center gap-3.5 px-4 py-4" title={hint}>
       <IconBadge tone={tone}>{icon}</IconBadge>
       <div className="min-w-0 flex-1">
-        <div className="muted truncate text-[12.5px] font-medium">{label}</div>
+        <div className="muted text-[12.5px] leading-tight font-medium">{label}</div>
         <div className="flex items-baseline gap-2">
           <span className="h-title text-[24px] leading-tight">{value}</span>
           {sub && <span className="text-[12px] font-medium">{sub}</span>}

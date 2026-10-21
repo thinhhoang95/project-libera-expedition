@@ -1,21 +1,24 @@
 import clsx from "clsx";
 import {
-  ArrowDownWideNarrow, ChevronLeft, ChevronRight, Download, ExternalLink, Filter, Link2, Map as MapIcon, Search, Sparkles,
-  Tags, TrendingUp, Waypoints, X,
+  ArrowDownWideNarrow, BookOpen, CalendarDays, ChevronLeft, ChevronRight, Download, ExternalLink, Filter, Globe, Link2, Map as MapIcon, Search, Sparkles, Tags, Target, TrendingUp, Waypoints, X, Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useApi } from "../api";
-import { useCategorySheet, usePaperDrawer, useRecordRecent } from "../context";
+import { useCategorySheet, usePaperDrawer, useRecordRecent, useSharedWindow } from "../context";
 import { FACET_META, FACET_ORDER, facetOf, mapHref, useCatalogue, type FacetKey } from "../facets";
 import { CatLink, Dot, FacetBadge, TimeSeeker } from "./Facets";
 import { PaperLink } from "./PaperDrawer";
-import { ACCENT, Plot } from "./Plot";
+import { by, useSortedList } from "./Sort";
+import { TimingPill } from "./Timing";
+import { ACCENT, MUTED, Plot } from "./Plot";
+import { isTopOverlay, useOverlay } from "./overlay";
+import { copyText } from "./Toasts";
 import { ErrorBox, Note, Pill, Seg, Spinner, pct, signedPct } from "./ui";
 
 type PaperRow = {
   paper_id: string; year: number | null; title: string; cites: number | null; cites_here: number; sim: number | null;
-  text: string | null; has_limitation: boolean;
+  text: string | null; has_limitation: boolean; venue_id: string | null; venue: string | null;
 } & Partial<Record<FacetKey, string | null>>;
 
 type CatData = {
@@ -24,31 +27,30 @@ type CatData = {
   papers: PaperRow[];
   flows: { year: number; from_cluster: string; to_cluster: string; count: number }[];
   flow_labels: Record<string, string>;
-  signals: { type: string; label: string; rank: number; role: string | null; title: string; paper_id: string | null; other: string | null; judge: number | null }[];
+  signals: { type: string; label: string; rank: number; role: string | null; title: string; paper_id: string | null; other: string | null; judge: number | null;
+    year: number | null; timing: string | null }[];
 };
 
 type Filters = Partial<Record<FacetKey, string>>;
 
-// the window survives hopping from one sheet to the next; a page with its own window hands it over
-let lastWindow: [number, number] | null = null;
-export const setSheetWindow = (w: [number, number] | null) => { lastWindow = w; };
-
 export function CategorySheet() {
   const { project } = useParams();
   const { cat, with: withCid, open } = useCategorySheet();
+  const ref = useOverlay<HTMLElement>(!!cat && !!project);
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || new URLSearchParams(window.location.search).get("paper")) return;
+      if (e.key !== "Escape" || !isTopOverlay(ref.current)) return;
       if ((e.target as HTMLElement)?.closest?.("input, textarea") && (e.target as HTMLInputElement).value) return;
       open(null);
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [open]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!cat || !project) return null;
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-slate-900/25" onClick={() => open(null)}>
-      <aside className="scroll-thin h-full w-full max-w-[1080px] overflow-y-auto bg-[var(--bg)] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="anim-fade fixed inset-0 z-40 flex justify-end bg-slate-900/25" onClick={() => open(null)}>
+      <aside ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Category details"
+        className="anim-slide scroll-thin h-full w-full max-w-[1080px] overflow-y-auto bg-[var(--bg)] shadow-2xl outline-none" onClick={(e) => e.stopPropagation()}>
         <SheetBody key={cat} p={project} cid={cat} withCid={withCid} onClose={() => open(null)} />
       </aside>
     </div>
@@ -77,9 +79,9 @@ function SheetBody({ p, cid, withCid, onClose }: { p: string; cid: string; withC
   const facet = facetOf(cid);
   const block = cat.facet.get(facet);
   const y0 = cat.data?.y0 ?? 2000, y1 = cat.data?.y1 ?? new Date().getFullYear(), asOf = cat.data?.as_of ?? y1;
-  const [win, setWinRaw] = useState<[number, number] | null>(lastWindow);
-  const setWin = (w: [number, number]) => { lastWindow = w; setWinRaw(w); };
-  const [t1, t2] = win && win[0] >= y0 && win[1] <= y1 ? win : [y0, y1];
+  // the project's shared window (Facets, the map, other sheets); by default the last three complete years
+  const [win, setWin] = useSharedWindow(p);
+  const [t1, t2] = win && win[0] >= y0 && win[1] <= y1 ? win : [Math.max(y0, asOf - 2), asOf];
   const lo = t1 <= y0 ? -Infinity : t1; // the first year also holds the earlier, sparse years
   const inWin = (y: number | null) => y != null && y >= lo && y <= t2;
   useRecordRecent(p, d ? { kind: "cat", id: cid, label: d.meta.label } : null);
@@ -88,8 +90,12 @@ function SheetBody({ p, cid, withCid, onClose }: { p: string; cid: string; withC
   const siblings = block?.categories ?? [];
   const at = siblings.findIndex((c) => c.cluster_id === cid);
   const step = (k: number) => siblings.length && open(siblings[(at + k + siblings.length) % siblings.length].cluster_id);
-  const [copied, setCopied] = useState(false);
   const [filters, setFilters] = useState<Filters>(() => (withCid ? { [facetOf(withCid)]: withCid } : {}));
+  const [venue, setVenue] = useState<string | null>(null); // a venue_id ("" = unknown venue), filters the papers
+  const toggleVenue = (v: string) => {
+    setVenue((x) => (x === v ? null : v));
+    document.getElementById("sheet-papers")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   const toggleFilter = (f: FacetKey, id: string) => {
     setFilters((x) => (x[f] === id ? { ...x, [f]: undefined } : { ...x, [f]: id }));
     document.getElementById("sheet-papers")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -131,8 +137,8 @@ function SheetBody({ p, cid, withCid, onClose }: { p: string; cid: string; withC
           {m?.on_map && <Link to={mapHref(p, { cid })} className="btn btn-sm"><MapIcon className="size-3.5" /> Show on the map</Link>}
           <Link to={`/p/${p}/explore/${facet}`} className="btn btn-sm"><Tags className="size-3.5" /> All {M.plural.toLowerCase()}</Link>
           <Link to={`/p/${p}/clusters?facet=${facet}&alpha=${m?.alpha ?? ""}&res=${m?.resolution ?? "medium"}&sel=${encodeURIComponent(cid)}`} className="btn btn-sm">Review this cluster</Link>
-          <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard?.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
-            <Link2 className="size-3.5" /> {copied ? "Copied" : "Copy link"}
+          <button className="btn btn-ghost btn-sm" onClick={() => copyText(window.location.href)}>
+            <Link2 className="size-3.5" /> Copy link
           </button>
         </div>
         <div className="mt-3"><TimeSeeker y0={y0} y1={y1} asOf={asOf} value={[t1, t2]} onChange={setWin} counts={counts} compact /></div>
@@ -142,9 +148,10 @@ function SheetBody({ p, cid, withCid, onClose }: { p: string; cid: string; withC
         <div className="flex flex-col gap-4 px-6 py-5">
           <Overview d={d} block={block} counts={counts} y0={y0} y1={y1} t1={t1} t2={t2} asOf={asOf} inWin={inWin} />
           <Relations d={d} p={p} facet={facet} y0={y0} y1={y1} t1={t1} t2={t2} inWin={inWin} withCid={withCid} filters={filters} onFilter={toggleFilter} />
+          <Journals d={d} p={p} y0={y0} y1={y1} t1={t1} t2={t2} asOf={asOf} inWin={inWin} venue={venue} onVenue={toggleVenue} />
           <Flows d={d} t1={lo} t2={t2} />
           {d.signals.length > 0 && <Signals d={d} p={p} />}
-          <Papers d={d} facet={facet} inWin={inWin} t1={t1} t2={t2} filters={filters} setFilters={setFilters} />
+          <Papers d={d} facet={facet} inWin={inWin} t1={t1} t2={t2} filters={filters} setFilters={setFilters} venue={venue} setVenue={setVenue} />
         </div>
       )}
     </div>
@@ -173,7 +180,7 @@ function Overview({ d, block, counts, y0, y1, t1, t2, asOf, inWin }: {
   const fig = useMemo(() => ({
     data: [
       { type: "bar", x: years, y: counts, name: "papers", hovertemplate: "%{x}: %{y} papers<extra></extra>",
-        marker: { color: years.map((y) => (y > asOf ? "rgba(31,106,214,0.25)" : y >= t1 && y <= t2 ? m.color : "#c9cdd2")) } },
+        marker: { color: years.map((y) => (y > asOf ? "rgba(31,106,214,0.25)" : y >= t1 && y <= t2 ? m.color : MUTED)) } },
       { type: "scatter", mode: "lines+markers", x: years, y: share, yaxis: "y2", name: "share", line: { color: ACCENT, width: 2 }, marker: { size: 5 },
         hovertemplate: "%{x}: %{y:.1%} of the facet<extra></extra>" },
     ],
@@ -245,7 +252,14 @@ function Relations({ d, p, facet, y0, y1, t1, t2, inWin, withCid, filters, onFil
     return { out, assigned, inW };
   }, [d, other, inWin, block, cat.byId, t1, t2, y0]);
   const maxShare = Math.max(...rows.out.map((r) => Math.max(r.share, r.base ?? 0)), 0.01);
-  const shown = all ? rows.out : rows.out.slice(0, 10);
+  type Rel = (typeof rows.out)[number];
+  const { sorted: relSorted, bar: relBar } = useSortedList(rows.out, [
+    by.count<Rel>("n", "Papers", (r) => r.n),
+    by.count<Rel>("lift", "Lift (over-represented here)", (r) => r.lift, Zap),
+    by.count<Rel>("base", "Share on the whole map", (r) => r.base, Globe),
+    by.title<Rel>((r) => r.label),
+  ], "sheet-relations");
+  const shown = all ? relSorted : relSorted.slice(0, 10);
 
   const timeFig = useMemo(() => {
     if (mode !== "time") return null;
@@ -288,7 +302,10 @@ function Relations({ d, p, facet, y0, y1, t1, t2, inWin, withCid, filters, onFil
         <div className="muted text-[13px]">None of the {rows.inW} papers in the window has a {OM.label.toLowerCase()} category{other === "limitations" ? " (most abstracts state no limitation)" : ""}.</div>
       ) : mode === "window" ? (
         <>
-          <div className="muted mb-2 text-[12px]">{rows.assigned} of {rows.inW} papers in the window have a {OM.label.toLowerCase()} category{other === "limitations" ? " (most abstracts state no limitation)" : ""}.</div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="muted text-[12px]">{rows.assigned} of {rows.inW} papers in the window have a {OM.label.toLowerCase()} category{other === "limitations" ? " (most abstracts state no limitation)" : ""}.</span>
+            {relBar}
+          </div>
           <div className="flex flex-col">
             {shown.map((r) => (
               <div key={r.id} className={clsx("group grid grid-cols-[minmax(0,1.3fr)_minmax(120px,1fr)_auto] items-center gap-3 rounded-md px-2 py-1.5 hover:bg-[var(--surface-2)]",
@@ -326,6 +343,164 @@ function Relations({ d, p, facet, y0, y1, t1, t2, inWin, withCid, filters, onFil
           <Note>Share of this category's papers per year, by {OM.label.toLowerCase()} category (top 7 in the window, the rest as other). The first year also holds earlier papers. Select a colour to filter the papers below.</Note>
         </>
       )}
+    </Section>
+  );
+}
+
+// ------------------------------------------------------------------ journals (venues) by year
+
+type Venue = {
+  id: string; name: string; n: number; nWin: number; counts: number[]; first: number | null; last: number | null;
+  lastWin: number | null; age: number | null; share: number; base: number | null; lift: number | null;
+};
+
+/** How long ago the latest paper of the category appeared in a journal, against the map's as-of year. */
+function AgePill({ age, last, asOf }: { age: number | null; last: number | null; asOf: number }) {
+  if (age == null || last == null) return <span className="faint">—</span>;
+  const tone = age <= 2 ? "green" : age >= 7 ? "amber" : "neutral";
+  const words = age <= 0 ? "this year" : `${age} yr${age > 1 ? "s" : ""} ago`;
+  return <Pill tone={tone} title={`The latest paper of this category in this journal is from ${last}, ${words} as of ${asOf}`}>{last} · {words}</Pill>;
+}
+
+function Journals({ d, p, y0: yTrend, y1, t1, t2, asOf, inWin, venue, onVenue }: {
+  d: CatData; p: string; y0: number; y1: number; t1: number; t2: number; asOf: number; inWin: (y: number | null) => boolean;
+  venue: string | null; onVenue: (v: string) => void;
+}) {
+  const { data: base } = useApi<{ venue_id: string[]; year: number[]; n: number[] }>(`/p/${p}/venues`, { staleTime: 600_000 });
+  const [term, setTerm] = useState("");
+  const [activeOnly, setActiveOnly] = useState(false);
+  const [all, setAll] = useState(false);
+  // the strip reaches back past the trend's start to the category's first paper (at most 30 columns): an old
+  // venue is the point of this section
+  const first = Math.min(...d.papers.map((r) => r.year ?? Infinity));
+  const y0 = Math.min(yTrend, Math.max(Number.isFinite(first) ? first : yTrend, y1 - 29));
+  const years = useMemo(() => Array.from({ length: y1 - y0 + 1 }, (_, i) => y0 + i), [y0, y1]);
+  const lo = t1 <= yTrend ? -Infinity : t1;
+
+  const rows = useMemo(() => {
+    const m = new Map<string, Venue>();
+    let nWinAll = 0;
+    d.papers.forEach((r) => {
+      const id = r.venue_id ?? "";
+      let v = m.get(id);
+      if (!v) {
+        v = { id, name: r.venue ?? "Unknown venue", n: 0, nWin: 0, counts: new Array(years.length).fill(0), first: null, last: null,
+          lastWin: null, age: null, share: 0, base: null, lift: null };
+        m.set(id, v);
+      }
+      v.n++;
+      if (r.year == null) return;
+      v.counts[Math.min(Math.max(r.year, y0), y1) - y0]++;
+      v.first = v.first == null ? r.year : Math.min(v.first, r.year);
+      if (r.year <= asOf) v.last = v.last == null ? r.year : Math.max(v.last, r.year);
+      if (inWin(r.year)) { v.nWin++; nWinAll++; v.lastWin = Math.max(v.lastWin ?? -Infinity, r.year); }
+    });
+    // whole-map baseline in the same window: each venue's share of all papers
+    const bw = new Map<string, number>();
+    let btot = 0;
+    if (base) base.venue_id.forEach((id, i) => {
+      const y = base.year[i];
+      if (y < lo || y > t2) return;
+      bw.set(id, (bw.get(id) ?? 0) + base.n[i]);
+      btot += base.n[i];
+    });
+    const out = [...m.values()];
+    out.forEach((v) => {
+      v.age = v.last == null ? null : asOf - v.last;
+      v.share = nWinAll ? v.nWin / nWinAll : 0;
+      v.base = base && btot ? (bw.get(v.id) ?? 0) / btot : null;
+      v.lift = v.base && v.nWin >= 2 ? v.share / v.base : null; // one paper says little
+    });
+    return { out: out.sort((a, b) => b.nWin - a.nWin || b.n - a.n), nWinAll };
+  }, [d, years, y0, y1, asOf, inWin, base, lo, t2]);
+
+  const filtered = useMemo(() => {
+    const t = term.trim().toLowerCase();
+    return rows.out.filter((v) => (!activeOnly || v.nWin > 0) && (!t || v.name.toLowerCase().includes(t)));
+  }, [rows, term, activeOnly]);
+  const { sorted, bar } = useSortedList(filtered, [
+    by.count<Venue>("win", "Papers in the window", (v) => v.nWin),
+    by.count<Venue>("all", "Papers, all years", (v) => v.n),
+    { ...by.year<Venue>((v) => v.last), label: "Latest paper here" },
+    { key: "first", label: "First paper here", icon: CalendarDays, get: (v: Venue) => v.first, dir: 1, dirs: ["oldest first", "newest first"] },
+    by.count<Venue>("lift", "Lift (over-represented here)", (v) => v.lift, Zap),
+    by.title<Venue>((v) => v.name),
+  ], "sheet-journals");
+  const shown = all || term ? sorted : sorted.slice(0, 12);
+  const mx = Math.max(1, ...rows.out.map((v) => Math.max(...v.counts)));
+  const known = rows.out.filter((v) => v.id);
+  const top5 = [...known].sort((a, b) => b.nWin - a.nWin).slice(0, 5).reduce((a, v) => a + v.nWin, 0);
+  const stale = known.filter((v) => v.age != null && v.age >= 7 && v.n >= 2).length;
+  const color = d.meta.color;
+  const winCol = (y: number) => (y >= t1 || (t1 <= yTrend && y <= yTrend)) && y <= t2;
+  const folded = Number.isFinite(first) && first < y0;
+  const tick = (y: number) => y === y0 || y === y1 || y % 5 === 0;
+  const grid = "grid grid-cols-[minmax(0,1.15fr)_minmax(150px,1.6fr)_auto] items-center gap-3";
+
+  return (
+    <Section title="Journals" icon={<BookOpen className="size-4 text-sky-600" />}
+      sub={<>Where this category's papers were published, year by year. A journal that carried the topic ten years ago is not the venue it is today: read the strip and the <b>latest paper</b> together before you aim a paper at it. Select a journal to filter the papers below.</>}
+      actions={bar}>
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
+        <span><b className="tabular-nums">{known.length}</b> <span className="muted">journals</span></span>
+        <span><b className="tabular-nums">{pct(rows.nWinAll ? top5 / rows.nWinAll : null, 0)}</b> <span className="muted">of the window's papers in the top 5</span></span>
+        <span><b className="tabular-nums">{stale}</b> <span className="muted">journals with 2+ papers but none here in the last 7 years</span></span>
+      </div>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="faint pointer-events-none absolute top-2.5 left-2.5 size-3.5" />
+          <input className="input !pl-8" placeholder="Search journals" value={term} onChange={(e) => setTerm(e.target.value)} />
+        </div>
+        <label className="flex items-center gap-1.5 text-[12.5px]"><input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} className="accent-[var(--color-brand-600)]" /> Published here in the window</label>
+      </div>
+      <div className={clsx(grid, "faint px-2 pb-1 text-[10.5px]")}>
+        <span>Journal</span>
+        <div className="flex">{years.map((y) => <span key={y} className={clsx("flex-1 whitespace-nowrap tabular-nums", y === y0 ? "text-left" : "text-center", winCol(y) && "font-semibold text-[var(--chip-text)]")}>{y === y0 && folded ? `≤’${String(y).slice(2)}` : tick(y) ? `’${String(y).slice(2)}` : ""}</span>)}</div>
+        <div className="flex items-center gap-2 text-right">
+          <span className="w-9" title="Papers in the window">window</span><span className="w-9" title="Papers, all years">all</span>
+          <span className="w-11" title="Lift over the whole map in the window">lift</span><span className="w-[118px] text-left">latest paper</span>
+        </div>
+      </div>
+      <div className="flex flex-col">
+        {shown.map((v) => (
+          <div key={v.id || "-"} role="button" tabIndex={0} onClick={() => onVenue(v.id)} onKeyDown={(e) => e.key === "Enter" && onVenue(v.id)}
+            title="Filter the papers below by this journal"
+            className={clsx(grid, "group cursor-pointer rounded-md px-2 py-1.5 hover:bg-[var(--surface-2)]", venue === v.id && "bg-[var(--nav-active)]",
+              v.nWin === 0 && "opacity-70")}>
+            <div className="min-w-0">
+              <div className={clsx("truncate text-[13px] text-[var(--text-strong)] group-hover:text-brand-600", !v.id && "italic")}>{v.name}</div>
+              <div className="faint text-[11px] tabular-nums">{v.first == null ? "—" : v.first === v.last ? `${v.first}` : `${v.first}–${v.last ?? v.first}`}</div>
+            </div>
+            <div className="flex h-5 overflow-hidden rounded-sm">
+              {v.counts.map((c, i) => {
+                const y = years[i];
+                return (
+                  <div key={y} className={clsx("relative flex-1 border-r border-[var(--surface)] last:border-r-0", winCol(y) ? "bg-[var(--chip)]" : "bg-[var(--surface-2)]")}
+                    title={`${v.name} · ${i === 0 && folded ? `${y0} and earlier` : y}: ${c} paper${c === 1 ? "" : "s"}`}>
+                    {c > 0 && <div className="absolute inset-0" style={{ background: color, opacity: 0.25 + 0.75 * Math.sqrt(c / mx) }} />}
+                    {y > asOf && <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent_0_3px,rgba(255,255,255,0.5)_3px_5px)]" />}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2 text-right text-[12px] tabular-nums">
+              <span className="w-9 font-medium">{v.nWin || <span className="faint">0</span>}</span>
+              <span className="muted w-9">{v.n}</span>
+              <span className={clsx("w-11", v.lift && v.lift >= 1.5 ? "font-medium text-emerald-600" : v.lift && v.lift < 0.67 ? "text-red-600" : "muted")}>
+                {v.lift ? `${v.lift.toFixed(1)}×` : "—"}
+              </span>
+              <span className="w-[118px] text-left"><AgePill age={v.age} last={v.last} asOf={asOf} /></span>
+            </div>
+          </div>
+        ))}
+        {!shown.length && <div className="muted py-4 text-center text-[13px]">No journal matches.</div>}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="faint text-[11.5px]">
+          Cells: papers per year (darker = more; the window is shaded{folded ? `; the first column also holds the years before ${y0}` : ""}). <b>Lift</b> (2+ papers in the window) compares the journal's share of this category's papers with its share of the whole map in the window. Latest paper: green within 2 years of {asOf}, amber 7 or more years before.
+        </span>
+        {!term && filtered.length > 12 && <button className="btn btn-ghost btn-sm" onClick={() => setAll(!all)}>{all ? "Top 12" : `All ${filtered.length}`}</button>}
+      </div>
     </Section>
   );
 }
@@ -371,16 +546,21 @@ function Flows({ d, t1, t2 }: { d: CatData; t1: number; t2: number }) {
 
 // ------------------------------------------------------------------ opportunities
 
+type Sig = CatData["signals"][number];
+
 function Signals({ d, p }: { d: CatData; p: string }) {
+  const { sorted, bar } = useSortedList(d.signals, [
+    by.rank<Sig>((s) => s.rank), by.judge<Sig>((s) => s.judge), by.year<Sig>((s) => s.year), by.title<Sig>((s) => s.title),
+  ], "sheet-signals");
   const groups = useMemo(() => {
-    const g = new Map<string, CatData["signals"]>();
-    d.signals.forEach((s) => g.set(s.label, [...(g.get(s.label) ?? []), s]));
+    const g = new Map<string, Sig[]>();
+    sorted.forEach((s) => g.set(s.label, [...(g.get(s.label) ?? []), s]));
     return [...g.entries()];
-  }, [d]);
+  }, [sorted]);
   return (
     <Section title="Opportunities and signals naming it" icon={<Sparkles className="size-4 text-orange-600" />}
       sub="Ranked candidates from the signal layer where this category is a side. Evidence and judgments are in Map & grid › Bridges."
-      actions={<Link to={`/p/${p}/map?facet=problem&alpha=0.5&res=medium&tab=Bridges`} className="btn btn-ghost btn-sm">Open Bridges <ExternalLink className="size-3" /></Link>}>
+      actions={<>{bar}<Link to={`/p/${p}/map?facet=problem&alpha=0.5&res=medium&tab=Bridges`} className="btn btn-ghost btn-sm">Open Bridges <ExternalLink className="size-3" /></Link></>}>
       <div className="grid gap-4 md:grid-cols-2">
         {groups.map(([label, rows]) => (
           <div key={label}>
@@ -391,6 +571,7 @@ function Signals({ d, p }: { d: CatData; p: string }) {
                   <span className="faint w-9 shrink-0 tabular-nums">#{s.rank}</span>
                   <span className="min-w-0 flex-1">
                     {s.paper_id ? <PaperLink pid={s.paper_id} title={s.title} /> : s.other ? <CatLink cid={s.other} label={s.title} /> : s.title}
+                    {s.paper_id && (s.year || s.timing) && <span className="ml-1.5 inline-flex items-center gap-1"><span className="faint text-[11.5px]">{s.year}</span><TimingPill t={s.timing} /></span>}
                     {s.role === "from_cluster" && s.type.startsWith("bridge_paper") && <span className="faint"> (from here)</span>}
                   </span>
                   {s.judge != null && <span className="faint shrink-0" title="LLM judge 1–5">{s.judge}</span>}
@@ -406,40 +587,41 @@ function Signals({ d, p }: { d: CatData; p: string }) {
 
 // ------------------------------------------------------------------ papers
 
-const SORTS = [
-  { value: "sim", label: "Most typical" }, { value: "new", label: "Newest" }, { value: "old", label: "Oldest" },
-  { value: "here", label: "Most cited here" }, { value: "cites", label: "Most cited overall" },
-];
 
-function Papers({ d, facet, inWin, t1, t2, filters, setFilters }: {
+function Papers({ d, facet, inWin, t1, t2, filters, setFilters, venue, setVenue }: {
   d: CatData; facet: FacetKey; inWin: (y: number | null) => boolean; t1: number; t2: number; filters: Filters; setFilters: (f: (x: Filters) => Filters) => void;
+  venue: string | null; setVenue: (v: string | null) => void;
 }) {
   const cat = useCatalogue(useParams().project ?? "");
   const { paper: openPaper } = usePaperDrawer();
   const [term, setTerm] = useState("");
-  const [sort, setSort] = useState("sim");
   const [windowOnly, setWindowOnly] = useState(true);
   const [limOnly, setLimOnly] = useState(false);
   const [n, setN] = useState(40);
-  useEffect(() => setN(40), [term, sort, windowOnly, limOnly, filters, t1, t2]);
   const others = FACET_ORDER.filter((f) => f !== facet);
-  const rows = useMemo(() => {
+  const filtered = useMemo(() => {
     const t = term.trim().toLowerCase();
     let r = d.papers.filter((x) => (!windowOnly || inWin(x.year)) && (!limOnly || x.has_limitation)
-      && others.every((f) => !filters[f] || x[f] === filters[f])
-      && (!t || (x.title ?? "").toLowerCase().includes(t) || (x.text ?? "").toLowerCase().includes(t)));
-    const by: Record<string, (a: PaperRow, b: PaperRow) => number> = {
-      sim: (a, b) => (b.sim ?? -1) - (a.sim ?? -1), new: (a, b) => (b.year ?? 0) - (a.year ?? 0), old: (a, b) => (a.year ?? 9999) - (b.year ?? 9999),
-      here: (a, b) => b.cites_here - a.cites_here, cites: (a, b) => (b.cites ?? 0) - (a.cites ?? 0),
-    };
-    r = [...r].sort(by[sort]);
+      && others.every((f) => !filters[f] || x[f] === filters[f]) && (venue == null || (x.venue_id ?? "") === venue)
+      && (!t || (x.title ?? "").toLowerCase().includes(t) || (x.text ?? "").toLowerCase().includes(t) || (x.venue ?? "").toLowerCase().includes(t)));
     return r;
-  }, [d, term, sort, windowOnly, limOnly, filters, inWin]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [d, term, windowOnly, limOnly, filters, venue, inWin]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { sorted: rows, bar, sort } = useSortedList(filtered, [
+    { ...by.count<PaperRow>("sim", "Most typical", (r) => r.sim, Target), dirs: ["least typical first", "most typical first"] },
+    by.year<PaperRow>((r) => r.year), by.citedHere<PaperRow>((r) => r.cites_here), by.cites<PaperRow>((r) => r.cites),
+    by.title<PaperRow>((r) => r.title),
+  ], "sheet-papers");
+  useEffect(() => setN(40), [term, sort, windowOnly, limOnly, filters, venue, t1, t2]);
+  // a journal picked for its older papers shows them: leave the window when none of its papers is in it
+  useEffect(() => {
+    if (venue != null && !d.papers.some((x) => (x.venue_id ?? "") === venue && inWin(x.year))) setWindowOnly(false);
+  }, [venue]); // eslint-disable-line react-hooks/exhaustive-deps
+  const venueName = venue == null ? null : venue === "" ? "Unknown venue" : d.papers.find((x) => x.venue_id === venue)?.venue ?? venue;
   const active = others.filter((f) => filters[f]);
   const csv = () => {
-    const head = ["paper_id", "year", "title", "cites_here", "cites", ...others.map((f) => f)];
+    const head = ["paper_id", "year", "venue", "title", "cites_here", "cites", ...others.map((f) => f)];
     const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const lines = [head.join(","), ...rows.map((r) => [r.paper_id, r.year, r.title, r.cites_here, r.cites, ...others.map((f) => cat.byId.get(r[f] ?? "")?.label ?? "")].map(esc).join(","))];
+    const lines = [head.join(","), ...rows.map((r) => [r.paper_id, r.year, r.venue, r.title, r.cites_here, r.cites, ...others.map((f) => cat.byId.get(r[f] ?? "")?.label ?? "")].map(esc).join(","))];
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
     a.download = `${d.meta.label.replace(/[^\w]+/g, "-").toLowerCase()}-papers.csv`;
@@ -454,21 +636,27 @@ function Papers({ d, facet, inWin, t1, t2, filters, setFilters }: {
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[220px] flex-1">
           <Search className="faint pointer-events-none absolute top-2.5 left-2.5 size-3.5" />
-          <input className="input !pl-8" placeholder={`Search titles and ${FACET_META[facet].label.toLowerCase()} statements`} value={term} onChange={(e) => setTerm(e.target.value)} />
+          <input className="input !pl-8" placeholder={`Search titles, journals and ${FACET_META[facet].label.toLowerCase()} statements`} value={term} onChange={(e) => setTerm(e.target.value)} />
         </div>
-        <select className="select !w-auto" value={sort} onChange={(e) => setSort(e.target.value)}>{SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select>
+        {bar}
         <label className="flex items-center gap-1.5 text-[12.5px]"><input type="checkbox" checked={windowOnly} onChange={(e) => setWindowOnly(e.target.checked)} className="accent-[var(--color-brand-600)]" /> In the window</label>
         <label className="flex items-center gap-1.5 text-[12.5px]"><input type="checkbox" checked={limOnly} onChange={(e) => setLimOnly(e.target.checked)} className="accent-[var(--color-brand-600)]" /> States a limitation</label>
       </div>
-      {active.length > 0 && (
+      {(active.length > 0 || venueName) && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {venueName && (
+            <span className="chip !py-0.5">
+              <span className="faint">Journal:</span> {venueName}
+              <button className="ml-0.5 opacity-70 hover:opacity-100" onClick={() => setVenue(null)}><X className="size-3" /></button>
+            </span>
+          )}
           {active.map((f) => (
             <span key={f} className="chip !py-0.5">
               <span className="faint">{FACET_META[f].label}:</span> {cat.byId.get(filters[f]!)?.label ?? filters[f]}
               <button className="ml-0.5 opacity-70 hover:opacity-100" onClick={() => setFilters((x) => ({ ...x, [f]: undefined }))}><X className="size-3" /></button>
             </span>
           ))}
-          <button className="btn btn-ghost btn-sm" onClick={() => setFilters(() => ({}))}>Clear</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => { setFilters(() => ({})); setVenue(null); }}>Clear</button>
         </div>
       )}
       <ul className="mt-3 flex flex-col">
@@ -478,6 +666,8 @@ function Papers({ d, facet, inWin, t1, t2, filters, setFilters }: {
               <span className="faint w-10 shrink-0 pt-px text-[12px] tabular-nums">{r.year ?? "—"}</span>
               <div className="min-w-0 flex-1">
                 <PaperLink pid={r.paper_id} title={r.title} className="text-[13.3px] font-medium text-[var(--text-strong)]" />
+                {r.venue && <button className={clsx("faint block max-w-full truncate text-left text-[11.8px] italic hover:text-brand-600", venue === r.venue_id && "!text-brand-600")}
+                  title="Filter by this journal" onClick={() => setVenue(r.venue_id ?? "")}>{r.venue}{r.year ? `, ${r.year}` : ""}</button>}
                 {r.text && <p className="muted clamp-2 mt-0.5 text-[12.3px] leading-snug">{r.text}</p>}
                 <div className="mt-1 flex flex-wrap gap-1">
                   {others.map((f) => r[f] && (

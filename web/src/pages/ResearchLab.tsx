@@ -4,7 +4,8 @@ import { Link } from "react-router-dom";
 import { api, qs, useApi } from "../api";
 import { DataTable } from "../components/DataTable";
 import { PageHeader } from "../components/Layout";
-import { PaperLink, ReviewBar } from "../components/PaperDrawer";
+import { ReviewBar } from "../components/PaperDrawer";
+import { PaperList } from "../components/Sort";
 import { Plot } from "../components/Plot";
 import { Card, Empty, Note, Seg, Spinner, StatCard } from "../components/ui";
 import { useProjectId } from "../context";
@@ -21,9 +22,7 @@ function Evidence({ ids }: { ids: string[] }) {
   });
   if (!ids.length) return null;
   return (
-    <ul className="mt-2 flex flex-col gap-1 text-[13px]">
-      {(data ?? []).map((e) => <li key={e.paper_id}><span className="faint mr-2">{e.year}</span><PaperLink pid={e.paper_id} title={e.title} /></li>)}
-    </ul>
+    <PaperList rows={data ?? []} id="lab-evidence" className="mt-2" dense />
   );
 }
 
@@ -68,7 +67,7 @@ function Dynamics({ d }: { d: any }) {
           <Plot height={300} data={series} layout={{ yaxis: { tickformat: ".1%" } }} />
           <Note>Very small route denominators make individual trajectories noisy. This sensitivity analysis cannot recover an unbiased field trend.</Note>
           <details className="mt-2"><summary className="muted cursor-pointer text-[12.5px] font-medium">Recent evidence papers</summary>
-            <ul className="mt-2 flex flex-col gap-1 text-[13px]">{tr.evidence.map((e: any) => <li key={e.paper_id}><span className="faint mr-2">{e.year}</span><PaperLink pid={e.paper_id} title={e.title} /></li>)}</ul>
+            <PaperList rows={tr.evidence} id="lab-trend-evidence" className="mt-2" dense />
           </details>
         </Card>
       )}
@@ -133,7 +132,7 @@ function Underconnected({ d }: { d: any }) {
       {rows.length ? (
         <>
           <Plot height={320} data={[{ type: "scatter", mode: "markers", x: rows.map((r) => r.semantic_similarity), y: rows.map((r) => r.ratio), text: rows.map((r) => r.pair),
-            marker: { size: rows.map((r) => 6 + Math.sqrt(r.expected) * 2), color: rows.map((r) => r.score), colorscale: "Blues", showscale: true, line: { width: 1, color: "#fff" } },
+            marker: { size: rows.map((r) => 6 + Math.sqrt(r.expected) * 2), color: rows.map((r) => r.score), colorscale: "Blues", showscale: true, line: { width: 1, color: "var(--ring)" } },
             hovertemplate: "%{text}<br>similarity %{x:.3f} · observed/expected %{y:.2f}<extra></extra>" }]}
             layout={{ xaxis: { title: { text: "semantic similarity" } }, yaxis: { title: { text: "observed / expected" } }, margin: { l: 50, r: 10, t: 10, b: 40 } }} />
           <DataTable rows={rows} rowKey={(r) => r.pair} onSelect={setSel} selected={(r) => r.pair === row?.pair} cols={[
@@ -143,7 +142,7 @@ function Underconnected({ d }: { d: any }) {
           ]} />
           {row && (
             <Card title={row.pair} subtitle={`Observed ${row.observed} citations; null expectation ${row.expected.toFixed(1)}. Evidence is the nearest pair of problem facets, not a confirmed solution transfer.`}>
-              <ul className="flex flex-col gap-1 text-[13px]">{(ev ?? []).map((e) => <li key={e.paper_id}><span className="faint mr-2">{e.year}</span><PaperLink pid={e.paper_id} title={e.title} /></li>)}</ul>
+              <PaperList rows={ev ?? []} id="lab-pair-evidence" dense />
               <ReviewBar view="research_lab_opportunity" label="Opportunity judgment" subject={{ source: row.source, target: row.target, snapshot: d.audit.as_of }}
                 actions={["useful and non-obvious", "obvious", "wrong", "uncertain"]} alpha={{ problem: 0.3 }} />
             </Card>

@@ -4,16 +4,18 @@ A category is a cluster of one facet (problem, method, innovation, result, limit
 reference setting: problem and method at α = 0.5 (where bridges and method transfer are computed), the others
 at α = 0, all at medium resolution. The problem categories are the communities of Start here.
 
-The sheet sends every paper of the category with its categories in the other facets, so the browser can
-scope the trend, the distributions over the other facets and the paper list to any time window without
-another request.
+The sheet sends every paper of the category with its categories in the other facets and its venue (journal or
+proceedings), so the browser can scope the trend, the distributions over the other facets and journals, and the
+paper list to any time window without another request.
 """
 
 from __future__ import annotations
 
 import pandas as pd
 from fastapi import HTTPException
+from pydantic import BaseModel
 
+from . import timing as tm
 from .data import Router, columns, jl, memo, q, records, titles
 from .views_map import BRIDGE_TYPES, _bridge_title
 
@@ -139,6 +141,8 @@ def category(p: str, cid: str) -> dict:
     others = [f for f in FACETS if f != facet]
     P = M.loc[ids].reset_index()[["paper_id", "year", "title", "cites", *others]]
     P = P.merge(sims, on="paper_id", how="left").merge(text, on="paper_id", how="left")
+    ven = q(f"""SELECT paper_id, venue_id, venue_name AS venue FROM papers WHERE paper_id IN ({ph})""", ids)
+    P = P.merge(ven.drop_duplicates("paper_id"), on="paper_id", how="left")
     P["cites_here"] = P.paper_id.map(_cited_here(p)).fillna(0).astype(int)
     P["has_limitation"] = P.paper_id.isin(set(lim))
     P = P.sort_values("sim", ascending=False, na_position="last")
@@ -166,12 +170,25 @@ def cooccurrence(p: str, a: str = "problem", b: str = "method") -> dict:
     return columns(g)
 
 
+@router.get("/p/{p}/venues")
+@memo(8)
+def venues(p: str) -> dict:
+    """Corpus papers per (venue, year): the whole-map baseline for a category's journals."""
+    d = q("""SELECT p.venue_id, p.year, count(*) AS n FROM papers p JOIN provenance v USING (paper_id)
+             WHERE v.run_id = ? AND p.year IS NOT NULL GROUP BY 1, 2""", (p,))
+    d["venue_id"] = d.venue_id.fillna("")
+    d["year"] = d.year.astype(int)
+    return columns(d)
+
+
 def _signals_for(p: str, cid: str) -> list[dict]:
     """Opportunities that name this category: bridges, papers to bring in, method transfer, new combinations."""
     s = q("""SELECT signal_type, rank, subject, judge_score, score FROM signals WHERE run_id = ?
              AND signal_type IN ({}) AND CAST(subject AS VARCHAR) LIKE ? ORDER BY signal_type, rank""".format(
         ",".join("?" * len(SIGNAL_LABELS))), (p, *SIGNAL_LABELS, f'%"{cid}"%'))
     out = []
+    T = tm.as_of(p)
+    when = tm.paper_when(p, [jl(x).get("paper_id") for x in s.subject], T)
     for typ, g in s.groupby("signal_type", sort=False):
         for r in g.head(8).itertuples():
             subj = jl(r.subject)
@@ -181,7 +198,8 @@ def _signals_for(p: str, cid: str) -> list[dict]:
             paper = subj.get("paper_id")
             out.append({"type": typ, "label": SIGNAL_LABELS[typ], "rank": int(r.rank), "role": role,
                         "title": subj.get("title") if paper else _bridge_title(subj), "paper_id": paper,
-                        "other": others[0] if others else None,
+                        "other": others[0] if others else None, "year": (when.get(paper) or {}).get("year"),
+                        "timing": (when.get(paper) or {}).get("timing"),
                         "judge": None if pd.isna(r.judge_score) else float(r.judge_score)})
     return out
 
@@ -230,3 +248,22 @@ def search_categories(p: str, term: str, limit: int = 8) -> list[dict]:
     hit = hit.sort_values(["starts", "size"], ascending=False).head(limit)
     return records(hit[["facet", "cluster_id", "label", "size", "kind", "color"]])
 
+
+
+class Ids(BaseModel):
+    ids: list[str]
+
+
+@router.post("/p/{p}/paper-meta")
+def paper_meta(p: str, body: Ids) -> dict:
+    """Year, citations overall (OpenAlex) and citations from this map, for any list of papers (sorting in lists)."""
+    ids = [x for x in dict.fromkeys(body.ids) if isinstance(x, str)][:500]
+    if not ids:
+        return {}
+    d = q(f"""SELECT paper_id, year, cited_by_count AS cites, venue_name AS venue FROM papers
+              WHERE paper_id IN ({",".join("?" * len(ids))})""", ids)
+    ch = _cited_here(p)
+    return {r.paper_id: {"year": None if pd.isna(r.year) else int(r.year),
+                         "cites": None if pd.isna(r.cites) else int(r.cites),
+                         "cites_here": int(ch.get(r.paper_id, 0)), "venue": r.venue}
+            for r in d.itertuples()}

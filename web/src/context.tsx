@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 
 const LS = {
@@ -90,6 +90,42 @@ export function useRecordRecent(project: string | undefined, r: Omit<Recent, "at
   }, [project, key]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
+// ------------------------------------------------------------------ the time window, one per project
+
+export type YearWindow = [number, number];
+const winSubs = new Set<() => void>();
+const winKey = (project: string) => `libera.window.${project}`;
+const winCache = new Map<string, YearWindow | null>();
+
+function readWindow(project: string): YearWindow | null {
+  if (!winCache.has(project)) {
+    const m = /^(\d{4})-(\d{4})$/.exec(LS.get(winKey(project)) ?? "");
+    winCache.set(project, m ? [Number(m[1]), Number(m[2])] : null);
+  }
+  return winCache.get(project)!;
+}
+
+export function setSharedWindow(project: string, w: YearWindow | null) {
+  const cur = readWindow(project);
+  if (cur && w && cur[0] === w[0] && cur[1] === w[1]) return;
+  winCache.set(project, w);
+  LS.set(winKey(project), w ? `${w[0]}-${w[1]}` : "");
+  winSubs.forEach((f) => f());
+}
+
+/**
+ * The year window the user last chose in this project, shared by Facets, the map and every details sheet, and kept
+ * across reloads. `null` until they choose one: each view then shows its own default.
+ */
+export function useSharedWindow(project: string): [YearWindow | null, (w: YearWindow | null) => void] {
+  const w = useSyncExternalStore(
+    (f) => { winSubs.add(f); return () => winSubs.delete(f); },
+    () => readWindow(project),
+  );
+  const set = useCallback((x: YearWindow | null) => setSharedWindow(project, x), [project]);
+  return [w, set];
+}
+
 // ------------------------------------------------------------------ project from the URL
 
 export function useProjectId(): string {
@@ -98,15 +134,25 @@ export function useProjectId(): string {
 
 // ------------------------------------------------------------------ theme
 
+let theme = LS.get("libera.theme") ?? "system";
+const themeSubs = new Set<() => void>();
+const applyTheme = () => {
+  const root = document.documentElement;
+  if (theme === "system") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", theme);
+};
+applyTheme();
+
+/** light, dark or system; one value for the whole app (the sidebar switch and the command palette share it). */
 export function useTheme(): [string, (t: string) => void] {
-  const [theme, setTheme] = useState(() => LS.get("libera.theme") ?? "system");
-  useEffect(() => {
-    const root = document.documentElement;
-    if (theme === "system") root.removeAttribute("data-theme");
-    else root.setAttribute("data-theme", theme);
-    LS.set("libera.theme", theme);
-  }, [theme]);
-  return [theme, setTheme];
+  const t = useSyncExternalStore((f) => { themeSubs.add(f); return () => themeSubs.delete(f); }, () => theme);
+  const set = useCallback((x: string) => {
+    theme = x;
+    LS.set("libera.theme", x);
+    applyTheme();
+    themeSubs.forEach((f) => f());
+  }, []);
+  return [t, set];
 }
 
 export function initials(name: string) {

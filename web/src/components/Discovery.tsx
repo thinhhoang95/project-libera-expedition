@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { Layers, Users } from "lucide-react";
+import { useMemo, useState } from "react";
 import { CommunityPicker } from "./Facets";
 import { PaperLink } from "./PaperDrawer";
+import { PaperList, by, useSortedList } from "./Sort";
 import { HowToRead, Note, Pill } from "./ui";
 
 type Ref = { paper_id: string; title: string; year?: number | null };
@@ -15,9 +17,7 @@ export function Builders({ rows }: { rows?: Ref[] }) {
         {open ? "Hide" : `${rows.length} recent paper${rows.length > 1 ? "s" : ""} build on it without citing it`}
       </button>
       {open && (
-        <ul className="mt-1 flex flex-col gap-0.5 border-l-2 border-[var(--line)] pl-2">
-          {rows.map((b) => <li key={b.paper_id} className="text-[12px]"><span className="faint mr-1.5">{b.year}</span><PaperLink pid={b.paper_id} title={b.title} /></li>)}
-        </ul>
+        <PaperList rows={rows} id="builders" orderLabel="Closest first" className="mt-1 border-l-2 border-[var(--line)] pl-2" dense />
       )}
     </span>
   );
@@ -26,12 +26,19 @@ export function Builders({ rows }: { rows?: Ref[] }) {
 // ------------------------------------------------------------------ quiet foundations
 
 export function QuietFoundations({ data }: { data: { rows: any[]; evidence?: string | null } }) {
+  const rows = useMemo(() => data.rows.map((r, i) => ({ ...r, _rank: i + 1 })), [data.rows]);
+  const { sorted, bar } = useSortedList(rows, [
+    by.rank<any>((r) => r._rank), by.year<any>((r) => r.year),
+    by.count<any>("built", "Built on by later papers", (r) => r.attributed_quiet, Layers),
+    by.citedHere<any>((r) => r.cites_by_others, "Cited by others"), by.title<any>((r) => r.title),
+  ], "quiet-foundations");
   return (
     <>
+      {rows.length > 1 && <div className="mb-1.5 flex justify-end">{bar}</div>}
       <ol className="flex flex-col">
-        {data.rows.map((r, i) => (
+        {sorted.map((r) => (
           <li key={r.paper_id} className="flex gap-3 border-b border-[var(--line)] py-2 text-[13px] last:border-0">
-            <span className="faint w-5 shrink-0 text-right tabular-nums">{i + 1}</span>
+            <span className="faint w-5 shrink-0 text-right tabular-nums">{r._rank}</span>
             <span className="min-w-0 flex-1">
               <PaperLink pid={r.paper_id} title={r.title} /> <span className="faint text-[11.5px]">{r.year}</span>
               <span className="muted block text-[11.5px]">
@@ -58,10 +65,15 @@ const STATUS: Record<string, { tone: "green" | "amber" | "neutral"; head: string
 };
 
 export function ToolsList({ rows }: { rows: any[] }) {
+  const { sorted, bar } = useSortedList(rows, [
+    by.count<any>("recent", "Recent papers here", (r) => r.papers_here_recent),
+    by.title<any>((r) => r.method_label),
+  ], "tools");
   return (
     <div className="flex flex-col gap-3">
+      {rows.length > 1 && <div className="-mb-1 flex justify-end">{bar}</div>}
       {["settled", "in between", "in flux"].map((s) => {
-        const part = rows.filter((r) => r.status === s);
+        const part = sorted.filter((r) => r.status === s);
         if (!part.length) return null;
         return (
           <div key={s}>
@@ -105,15 +117,21 @@ export function ToolsToLearn({ data, picker = true }: { data: { rows: any[]; evi
 
 export function UntriedApplications({ data }: { data: { rows: any[]; evidence?: string | null } }) {
   const personal = data.rows.some((r) => r.paper_fit != null);
+  const rows = useMemo(() => data.rows.map((r, i) => ({ ...r, _rank: i + 1 })), [data.rows]);
+  const { sorted, bar } = useSortedList(rows, [
+    by.rank<any>((r) => r._rank, personal ? "Closest to your problem" : "Closest to its problems"),
+    ...(personal ? [by.count<any>("community", "Closest to the community", (r) => r.fit, Users)] : []),
+    by.count<any>("size", "Papers on the map", (r) => r.domain_papers),
+  ], "untried");
   return (
     <div>
-      <Pill tone="amber">early evidence · small sample</Pill>
+      <div className="flex flex-wrap items-center justify-between gap-2"><Pill tone="amber">early evidence · small sample</Pill>{rows.length > 1 && bar}</div>
       {!data.rows.length && <div className="muted mt-2 text-[13px]">Your home community already uses every application domain on this map, or is too small to rank.</div>}
       <ol className="mt-2 flex flex-col">
-        {data.rows.map((r, i) => (
+        {sorted.map((r) => (
           <li key={r.domain_id} className="border-b border-[var(--line)] py-2 text-[13px] last:border-0">
             <div className="flex items-baseline gap-2">
-              <span className="faint w-5 shrink-0 text-right tabular-nums">{i + 1}</span>
+              <span className="faint w-5 shrink-0 text-right tabular-nums">{r._rank}</span>
               <span className="h-title text-[13px]">Domain {r.domain_id}</span>
               <span className="faint text-[11.5px]">{r.domain_papers} papers on the map</span>
               <span className="ml-auto text-[12px] tabular-nums">
@@ -156,11 +174,11 @@ export function CrowdingGauge({ c }: { c: any }) {
       </div>
       {c.same_question_examples.length > 0 && (
         <div className="mt-2 text-[12.5px]"><span className="muted">Asking the same question:</span>
-          <ul className="mt-0.5">{c.same_question_examples.map((e: Ref) => <li key={e.paper_id}><span className="faint mr-1.5">{e.year}</span><PaperLink pid={e.paper_id} title={e.title} /></li>)}</ul></div>
+          <PaperList rows={c.same_question_examples} id="crowding-examples" className="mt-0.5" dense /></div>
       )}
       {c.limitation_examples.length > 0 && (
         <div className="mt-2 text-[12.5px]"><span className="muted">Limitations it may answer:</span>
-          <ul className="mt-0.5">{c.limitation_examples.map((e: Ref) => <li key={e.paper_id}><span className="faint mr-1.5">{e.year}</span><PaperLink pid={e.paper_id} title={e.title} /></li>)}</ul></div>
+          <PaperList rows={c.limitation_examples} id="crowding-examples" className="mt-0.5" dense /></div>
       )}
       <Note>Crowded questions draw attention: on this map, papers entering busy questions, and even those with close twins, were taken up more over three years. Answering a stated limitation drew the community's later work towards the paper.{c.computed_here && " Computed for this paper against the map; your own earlier papers are not left out."}</Note>
       {c.evidence && <HowToRead>{c.evidence}</HowToRead>}

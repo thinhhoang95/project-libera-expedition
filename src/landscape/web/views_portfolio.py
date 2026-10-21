@@ -15,6 +15,7 @@ from fastapi import HTTPException
 
 from .. import embed, portfolio
 from . import discovery_views as dv
+from . import timing as tm
 from ..research_lab import lab_dir
 from .data import (Router, corpus_vectors, embedding_version, ext_vectors, jl, memo, portfolio_file, q, read_file,
                    records, titles)
@@ -94,6 +95,55 @@ def _second_waves(S: pd.DataFrame | None) -> list[dict]:
     return out
 
 
+def _opportunities(p: str, T: int) -> dict:
+    """Start here › Opportunities, each with its timing (timing.py): fresh, active, fading or quiet lines."""
+    g = q("""SELECT subject, features, score FROM signals WHERE run_id = ? AND signal_type = 'bridge_paper_gem'
+             ORDER BY score DESC LIMIT 20""", (p,))
+    li = q("""SELECT subject, features, judge_score, judge_rationale FROM signals WHERE run_id = ?
+              AND signal_type = 'bridge_lim_inn' AND judge_score IS NOT NULL ORDER BY judge_score DESC, rank LIMIT 10""", (p,))
+    mt = q("""SELECT subject, features, judge_score FROM signals WHERE run_id = ? AND signal_type = 'bridge_method_transfer'
+              ORDER BY rank LIMIT 10""", (p,))
+    op = read_file(lab_dir(p) / "opportunities.parquet")
+    gs, gf = [jl(s) for s in g.subject], [jl(f) for f in g.features]
+    when = tm.paper_when(p, [s.get("paper_id") for s in gs], T)
+    gems = [{"paper_id": s.get("paper_id"), "title": s.get("title"), "community": s.get("label"),
+             "cluster_id": s.get("cluster_id"), "from_cluster": s.get("from_cluster"), "when": when.get(s.get("paper_id")),
+             "to_line": tm.line(p, s.get("cluster_id"), T), "status": f.get("status"), "age": f.get("age"),
+             "cites": f.get("citations_so_far")}
+            for s, f in zip(gs, gf)]
+    lim = []
+    for s, f, j, w in zip(li.subject, li.features, li.judge_score, li.judge_rationale):
+        s, f = jl(s), jl(f)
+        lim.append({"from": s.get("from_label"), "to": s.get("to_label"), "from_cluster": s.get("from_cluster"),
+                    "to_cluster": s.get("to_cluster"), "judge": j, "why": w,
+                    "when": tm.pair_when(f.get("pairs", []), T),
+                    "from_line": tm.line(p, s.get("from_cluster"), T), "to_line": tm.line(p, s.get("to_cluster"), T),
+                    "flow": tm.flow_change(p, s.get("from_cluster"), s.get("to_cluster"), T), "status": f.get("status")})
+    pm = q("""SELECT problem_cluster, method_cluster, year, count, first_year FROM pm_matrix WHERE run_id = ? AND alpha = 0.5""",
+           (p,))
+    mts = []
+    for s, f, j in zip(mt.subject, mt.features, mt.judge_score):
+        s, f = jl(s), jl(f)
+        m, prob = s.get("method_cluster"), s.get("problem_cluster")
+        nb = [x["cluster"] for x in f.get("neighbors_using_method", [])]
+        cells = pm[(pm.method_cluster == m) & pm.problem_cluster.isin(nb)]
+        mts.append({"method": s.get("method_label"), "problem": s.get("problem_label"), "method_cluster": m,
+                    "problem_cluster": prob, "judge": None if pd.isna(j) else float(j),
+                    "method_line": tm.line(p, m, T), "problem_line": tm.line(p, prob, T),
+                    "elsewhere_since": None if cells.empty else int(cells.first_year.min()),
+                    "elsewhere_recent": int(cells[cells.year.between(T - 2, T)]["count"].sum()),
+                    "elsewhere_before": int(cells[cells.year.between(T - 5, T - 3)]["count"].sum())})
+    uc = None
+    if op is not None:
+        uc = []
+        for r in op.sort_values("score", ascending=False).head(8).itertuples():
+            uc.append({"source_label": r.source_label, "target_label": r.target_label, "source": r.source, "target": r.target,
+                       "observed": int(r.observed), "expected": round(float(r.expected), 1),
+                       "source_line": tm.line(p, r.source, T), "target_line": tm.line(p, r.target, T),
+                       "flow": tm.flow_change(p, r.source, r.target, T)})
+    return {"as_of": T, "gems": gems, "lim_inn": lim, "method_transfer": mts, "underconnected": uc}
+
+
 @router.get("/p/{p}/overview")
 @memo()
 def overview(p: str) -> dict:
@@ -147,23 +197,7 @@ def overview(p: str) -> dict:
     out["read_now"] = [{"paper_id": jl(s).get("paper_id"), "title": jl(s).get("title"), "rank": int(r)}
                        for s, r in zip(ew.subject, ew["rank"])]
 
-    g = q("""SELECT subject, score FROM signals WHERE run_id = ? AND signal_type = 'bridge_paper_gem'
-             ORDER BY score DESC LIMIT 10""", (p,))
-    li = q("""SELECT subject, judge_score, judge_rationale FROM signals WHERE run_id = ? AND signal_type = 'bridge_lim_inn'
-              AND judge_score IS NOT NULL ORDER BY judge_score DESC, rank LIMIT 6""", (p,))
-    mt = q("""SELECT subject, judge_score FROM signals WHERE run_id = ? AND signal_type = 'bridge_method_transfer'
-              ORDER BY rank LIMIT 6""", (p,))
-    op = read_file(lab_dir(p) / "opportunities.parquet")
-    out["opportunities"] = {
-        "gems": [{"paper_id": jl(s).get("paper_id"), "title": jl(s).get("title"), "community": jl(s).get("label")}
-                 for s in g.subject],
-        "lim_inn": [{"from": jl(s).get("from_label"), "to": jl(s).get("to_label"), "judge": j, "why": w}
-                    for s, j, w in zip(li.subject, li.judge_score, li.judge_rationale)],
-        "method_transfer": [{"method": jl(s).get("method_label"), "problem": jl(s).get("problem_label"),
-                             "judge": None if pd.isna(j) else float(j)} for s, j in zip(mt.subject, mt.judge_score)],
-        "underconnected": None if op is None else records(
-            op.sort_values("score", ascending=False).head(6)[["source_label", "target_label", "observed", "expected"]]),
-    }
+    out["opportunities"] = _opportunities(p, T)
     out["second_waves"] = _second_waves(portfolio_file(p, "second_waves.parquet"))
     lasting = _lasting(p)
     for r in out["read_now"]:

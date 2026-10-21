@@ -1,4 +1,4 @@
-import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, type UseQueryOptions } from "@tanstack/react-query";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -26,14 +26,18 @@ export async function api<T = any>(path: string, init?: RequestInit & { json?: u
   return res.json();
 }
 
-export function useApi<T = any>(path: string | null, opts?: Partial<UseQueryOptions<T>>) {
+/** A GET as a query. `keep` shows the previous answer while the next one loads (a new facet, a new search term)
+ * instead of blanking the view; leave it off where the previous answer would be about something else (another paper). */
+export function useApi<T = any>(path: string | null, opts?: Partial<UseQueryOptions<T>> & { keep?: boolean }) {
+  const { keep, ...rest } = opts ?? {};
   return useQuery<T>({
     queryKey: [path],
     queryFn: () => api<T>(path!),
     enabled: !!path,
     staleTime: 60_000,
     retry: (n, e) => !(e instanceof ApiError && e.status < 500) && n < 1,
-    ...opts,
+    ...(keep ? { placeholderData: keepPreviousData as any } : {}),
+    ...rest,
   });
 }
 

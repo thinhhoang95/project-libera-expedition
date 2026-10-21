@@ -4,6 +4,7 @@ import { DataTable } from "./DataTable";
 import { Builders, quietRoleLabel, roleTone } from "./Discovery";
 import { CatLink, CommunityPicker } from "./Facets";
 import { PaperLink } from "./PaperDrawer";
+import { by, usePaperMeta, useSortedList } from "./Sort";
 import { HowToRead, Note, Pill, pct } from "./ui";
 
 /** Experiment 14: lasting = top third of breadth among equally generic ideas. Papers before 2018 are not assessed. */
@@ -27,15 +28,25 @@ export type ReadingRow = { cluster_id: string; label: string; rank: number; pape
   builders?: { paper_id: string; title: string; year?: number | null }[] };
 
 export function ReadingPath({ rows, limit }: { rows: ReadingRow[]; limit?: number }) {
+  const meta = usePaperMeta(rows.map((r) => r.paper_id));
+  const { sorted, bar } = useSortedList(rows, [
+    by.rank<ReadingRow>((r) => r.rank, "Reading order"),
+    by.year<ReadingRow>((r) => r.year),
+    by.citedHere<ReadingRow>((r) => r.cited_by_community, "Cited by this community"),
+    by.count<ReadingRow>("methods", "Source of recent methods", (r) => r.source_of_methods),
+    by.cites<ReadingRow>((r) => meta[r.paper_id]?.cites),
+    by.title<ReadingRow>((r) => r.title),
+  ], "reading-path");
   return (
     <>
+      <div className="mb-1.5 flex justify-end">{bar}</div>
       <ol className="flex flex-col">
-        {rows.slice(0, limit).map((r) => (
+        {sorted.slice(0, limit).map((r) => (
           <li key={r.paper_id} className="flex gap-3 border-b border-[var(--line)] py-2 text-[13px] last:border-0">
             <span className="faint w-5 shrink-0 text-right tabular-nums">{r.rank}</span>
             <span className="min-w-0 flex-1">
               <PaperLink pid={r.paper_id} title={r.title} />
-              <span className="faint ml-1.5 text-[11.5px]">{r.year}</span>
+              <span className="faint ml-1.5 text-[11.5px]">{r.year}{meta[r.paper_id]?.cites != null && ` · ${meta[r.paper_id].cites!.toLocaleString()} citations overall`}</span>
               <Lasting v={r.lasting_assessed ? r.lasting : null} />
               <span className="muted block text-[11.5px]">
                 <Pill tone={roleTone(r.role)}>{quietRoleLabel(r.role)}</Pill>

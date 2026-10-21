@@ -1,13 +1,14 @@
 import clsx from "clsx";
-import { Pause, Play, SlidersHorizontal } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { SlidersHorizontal } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigationType, useSearchParams } from "react-router-dom";
 import { qs, useApi } from "../api";
 import { PageHeader } from "../components/Layout";
-import { CatLink } from "../components/Facets";
-import { usePaperDrawer, useProjectId } from "../context";
+import { CatLink, TimeSeeker } from "../components/Facets";
+import { usePaperDrawer, useProjectId, useSharedWindow } from "../context";
+import { useCatalogue } from "../facets";
 import { ACCENT, MUTED, Plot } from "../components/Plot";
-import { Card, Empty, Note, Seg, Spinner } from "../components/ui";
+import { Card, Empty, Note, PageSkeleton, Seg, Spinner } from "../components/ui";
 import { BridgesPanel, DetailPanel, GridPanel, PeoplePanel, RankingPanel } from "./MapPanels";
 
 export const ALPHAS = [0, 0.3, 0.5, 0.8];
@@ -57,6 +58,46 @@ const quantile = (vals: number[], q: number) => {
   return s[lo] + (s[hi] - s[lo]) * (pos - lo);
 };
 
+const MAP_H = 600;
+
+type Placed = { id: string; x: number; y: number; text: string; size: number; pos: string };
+
+/**
+ * Cluster labels that do not collide: the selected cluster first, then flagged ones, then by share of the window.
+ * A label is kept when its box (estimated from its length and font size, in screen pixels) overlaps none already
+ * placed; near an edge it turns inward so it is not cut off. Long labels are shortened (the hover has them whole).
+ */
+function placeLabels(cs: { cluster_id: string; x: number | null; y: number | null; share: number }[], o: {
+  sel: string | null; badged?: (c: string) => boolean; label: (c: string) => string; xs: number[]; ys: number[]; width: number; height: number;
+}): Placed[] {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  o.xs.forEach((v, i) => { x0 = Math.min(x0, v); x1 = Math.max(x1, v); y0 = Math.min(y0, o.ys[i]); y1 = Math.max(y1, o.ys[i]); });
+  const k = Math.min(o.width / Math.max(x1 - x0, 1e-9), o.height / Math.max(y1 - y0, 1e-9)); // px per unit (aspect locked)
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const px = (x: number) => o.width / 2 + (x - cx) * k, py = (y: number) => o.height / 2 - (y - cy) * k;
+  const rank = (c: string) => (c === o.sel ? 0 : o.badged?.(c) ? 1 : 2);
+  const order = [...cs].filter((c) => c.x != null).sort((a, b) => rank(a.cluster_id) - rank(b.cluster_id) || b.share - a.share);
+  const boxes: [number, number, number, number][] = [];
+  const out: Placed[] = [];
+  for (const c of order) {
+    if (out.length >= 22) break;
+    const full = o.label(c.cluster_id);
+    const text = full.length > 40 ? full.slice(0, 38).trimEnd() + "…" : full;
+    const size = Math.min(15, Math.max(10, 9 + 25 * Math.sqrt(c.share)));
+    const w = text.length * size * 0.55 + 6, h = size * 1.35;
+    const x = px(c.x!), y = py(c.y!) - 6; // "top": the text sits just above the marker
+    let left = x - w / 2, pos = "top center";
+    if (left < 2) { left = x - 4; pos = "top right"; }
+    else if (left + w > o.width - 2) { left = x - w + 4; pos = "top left"; }
+    const b: [number, number, number, number] = [left, y - h, left + w, y];
+    const hit = boxes.some((q) => b[0] < q[2] && b[2] > q[0] && b[1] < q[3] && b[3] > q[1]);
+    if (hit && c.cluster_id !== o.sel) continue;
+    boxes.push(b);
+    out.push({ id: c.cluster_id, x: c.x!, y: c.y!, text, size, pos });
+  }
+  return out;
+}
+
 type Layers = { papers: boolean; clusters: boolean; density: boolean; compare: boolean; badges: boolean; flows: boolean;
   migration: boolean; novel: boolean; pockets: boolean; bridges: boolean; people: boolean };
 
@@ -96,12 +137,24 @@ function MapView() {
   const [L, setL] = useState<Layers>({ papers: true, clusters: true, density: false, compare: false, badges: false, flows: false,
     migration: false, novel: false, pockets: false, bridges: false, people: false });
   const [topN, setTopN] = useState(30);
+  // the map's width in pixels (rounded), so labels can be placed without overlapping
+  const [mapW, setMapW] = useState(900);
+  const ro = useRef<ResizeObserver | null>(null);
+  const mapBox = useCallback((el: HTMLDivElement | null) => {
+    ro.current?.disconnect();
+    if (!el) return;
+    ro.current = new ResizeObserver(([e]) => setMapW(Math.round(e.contentRect.width / 40) * 40 || 900));
+    ro.current.observe(el);
+  }, []);
   const [author, setAuthor] = useState("");
   const [tab, setTab] = useState(init.tab);
   const [sel, setSel] = useState<string | null>(init.sel);
   const [selPaper, setSelPaper] = useState<string | null>(focus);
-  const { data: m, isLoading } = useApi<MapData>(`/p/${p}/map` + qs({ facet, alpha, res }), { staleTime: 600_000 });
-  const [win, setWin] = useState<[number, number] | null>(init.win);
+  const { data: m, isLoading, isPlaceholderData: switching } = useApi<MapData>(`/p/${p}/map` + qs({ facet, alpha, res }), { staleTime: 600_000, keep: true });
+  // the window is the project's shared one (Facets and details sheets read it too); a link's `w` sets it
+  const [win, setWin] = useSharedWindow(p);
+  useEffect(() => { if (init.win) setWin(init.win); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const asOf = useCatalogue(p).data?.as_of;
   // a focused paper selects its cluster once the map is in
   useEffect(() => {
     if (!m?.built || !focus || init.sel) return;
@@ -117,18 +170,6 @@ function MapView() {
       return n;
     }, { replace: true });
   }, [facet, alpha, res, sel, tab, win, m]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [playing, setPlaying] = useState(false);
-  useEffect(() => {
-    if (m?.built && !win) setWin([m.y0, m.y1]);
-  }, [m, win]);
-  useEffect(() => {
-    if (!playing || !m) return;
-    const h = setInterval(() => setWin((w) => {
-      const n = w && w[1] < m.y1 ? w[1] + 1 : m.y0;
-      return [n, n];
-    }), 900);
-    return () => clearInterval(h);
-  }, [playing, m]);
 
   const nf = ["problem", "method", "innovation"].includes(facet) ? facet : "abstract";
   const { data: novelty } = useApi<{ paper_id: string[]; value: number[] }>(L.novel ? `/p/${p}/map/scores` + qs({ metric: "novelty", facet: nf }) : null);
@@ -140,7 +181,7 @@ function MapView() {
   const { data: authors } = useApi<{ author_id: string; label: string }[]>(L.people ? `/p/${p}/map/authors` : null);
   const { data: path } = useApi<{ year: number; x: number; y: number }[]>(L.people && author ? `/p/${p}/map/author-path` + qs({ author, facet, alpha }) : null);
 
-  const t1 = win?.[0] ?? m?.y0 ?? 0, t2 = win?.[1] ?? m?.y1 ?? 0;
+  const t1 = m ? Math.min(Math.max(win?.[0] ?? m.y0, m.y0), m.y1) : 0, t2 = m ? Math.max(Math.min(win?.[1] ?? m.y1, m.y1), t1) : 0;
   const derived = useMemo(() => {
     if (!m?.built) return null;
     const P = m.points, n = P.x.length;
@@ -275,15 +316,15 @@ function MapView() {
     if (L.clusters) {
       const cs = m.clusters.filter((c) => c.x != null).map((c) => ({ ...c, share: (derived.nWin.get(c.cluster_id) ?? 0) / Math.max(derived.totWin, 1) }))
         .sort((a, b) => b.share - a.share);
-      const shown = new Set([...cs.slice(0, 12).map((c) => c.cluster_id), ...(sel ? [sel] : []),
-        ...(L.badges ? cs.filter((c) => BADGE[derived.status.get(c.cluster_id) ?? ""]).map((c) => c.cluster_id) : [])]);
       data.push({ type: "scatter", mode: "markers", x: cs.map((c) => c.x), y: cs.map((c) => c.y), customdata: cs.map((c) => "cluster:" + c.cluster_id), hoverinfo: "text",
-        marker: { size: cs.map((c) => (c.kind === "hub" ? 11 : 7)), color: cs.map((c) => c.color), symbol: cs.map((c) => (c.kind === "hub" ? "diamond" : "circle")), line: { color: "white", width: 1 } },
+        marker: { size: cs.map((c) => (c.kind === "hub" ? 11 : 7)), color: cs.map((c) => c.color), symbol: cs.map((c) => (c.kind === "hub" ? "diamond" : "circle")), line: { color: "var(--ring)", width: 1 } },
         hovertext: cs.map((c) => `${disp(c.cluster_id)}<br>${(c.share * 100).toFixed(1)}% of window` + (derived.status.get(c.cluster_id) ? `<br>status ${t2}: ${derived.status.get(c.cluster_id)}` : "")) });
-      const txt = cs.filter((c) => shown.has(c.cluster_id));
-      const strong = getComputedStyle(document.documentElement).getPropertyValue("--text-strong").trim() || "#1f2328";
-      data.push({ type: "scatter", mode: "text", x: txt.map((c) => c.x), y: txt.map((c) => c.y), text: txt.map((c) => disp(c.cluster_id)), textposition: "top center", hoverinfo: "skip",
-        textfont: { size: txt.map((c) => Math.min(15, Math.max(10, 9 + 25 * Math.sqrt(c.share)))), color: txt.map((c) => (c.cluster_id === sel ? ACCENT : strong)) } });
+      const txt = placeLabels(cs, { sel, badged: L.badges ? (c) => !!BADGE[derived.status.get(c) ?? ""] : undefined, label: disp,
+        xs: P.x, ys: P.y, width: mapW, height: MAP_H });
+      // annotations, not a text trace: they draw above the WebGL points, on a translucent backing
+      txt.forEach((t) => annotations.push({ x: t.x, y: t.y, text: t.text, showarrow: false, yshift: 5, yanchor: "bottom",
+        xanchor: t.pos === "top right" ? "left" : t.pos === "top left" ? "right" : "center", borderpad: 1.5, bgcolor: "var(--label-bg)",
+        font: { size: t.size, color: t.id === sel ? ACCENT : "var(--text-strong)" }, captureevents: false }));
     }
     // the focused paper (from "Show on the map"): a star, and the view zoomed around it
     const fi = focus ? P.paper_id.indexOf(focus) : -1;
@@ -291,14 +332,14 @@ function MapView() {
     if (fi >= 0) {
       data.push({ type: "scatter", mode: "markers+text", x: [P.x[fi]], y: [P.y[fi]], customdata: [focus], text: ["this paper"], textposition: "bottom center",
         textfont: { size: 11, color: ACCENT }, hovertext: (P.title[fi] ?? "").slice(0, 90), hoverinfo: "text",
-        marker: { size: 18, symbol: "star", color: ACCENT, line: { color: "white", width: 1.5 } } });
+        marker: { size: 18, symbol: "star", color: ACCENT, line: { color: "var(--ring)", width: 1.5 } } });
       const dx = (Math.max(...P.x) - Math.min(...P.x)) / 7, dy = (Math.max(...P.y) - Math.min(...P.y)) / 7;
       xaxis.range = [P.x[fi] - dx, P.x[fi] + dx];
       yaxis.range = [P.y[fi] - dy, P.y[fi] + dy];
     }
     return { data, layout: { margin: { l: 0, r: 0, t: 0, b: 0 }, showlegend: false, xaxis, yaxis, dragmode: "pan", annotations,
       uirevision: `${facet}|${alpha}|${res}|${focus ?? ""}` } };
-  }, [m, derived, L, sel, novelty, pockets, flowsC, flowsM, arcs, path, topN, t1, t2, res, onBridgeMap, nf, focus]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [m, derived, L, sel, novelty, pockets, flowsC, flowsM, arcs, path, topN, t1, t2, res, onBridgeMap, nf, focus, mapW]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const axisFig = useMemo(() => {
     if (!m?.built) return null;
@@ -318,7 +359,7 @@ function MapView() {
   const nosig = !m?.have_signals;
   const active = [L.density, L.flows, L.migration, L.novel, L.pockets, L.bridges, L.people].filter(Boolean).length;
 
-  if (isLoading && !m) return <Spinner label="Loading the map…" />;
+  if (isLoading && !m) return <PageSkeleton stats={false} />;
   if (m && !m.built)
     return (
       <div className="mx-auto max-w-3xl">
@@ -382,8 +423,13 @@ function MapView() {
         </Card>
 
         <div className="flex min-w-0 flex-col gap-3">
-          <div className="card overflow-hidden">
-            {mapFig && <Plot data={mapFig.data} layout={mapFig.layout as any} height={600} config={{ scrollZoom: true, displayModeBar: "hover", modeBarButtonsToRemove: ["select2d", "lasso2d", "toImage"] }}
+          <div ref={mapBox} className="card relative overflow-hidden">
+            {switching && (
+              <div className="anim-fade absolute inset-0 z-10 grid place-items-center bg-[var(--surface)]/60 backdrop-blur-[1px]">
+                <Spinner label={`Loading the ${facet} map…`} />
+              </div>
+            )}
+            {mapFig && <Plot data={mapFig.data} layout={mapFig.layout as any} height={MAP_H} config={{ scrollZoom: true, displayModeBar: "hover", modeBarButtonsToRemove: ["select2d", "lasso2d", "toImage"] }}
               onClick={(pt: any) => {
                 const cd = pt.customdata as string | undefined;
                 if (!cd) return;
@@ -400,19 +446,7 @@ function MapView() {
               }} />}
           </div>
           <div className="card px-4 py-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <button className="btn btn-sm" onClick={() => { if (!playing && m) setWin([m.y0, m.y0]); setPlaying(!playing); }}>
-                {playing ? <><Pause className="size-3.5" /> Stop</> : <><Play className="size-3.5" /> Play</>}
-              </button>
-              <span className="h-title text-[13px]">Window {t1}–{t2}</span>
-              {m && (
-                <div className="flex min-w-[260px] flex-1 items-center gap-2">
-                  <input type="range" min={m.y0} max={m.y1} value={t1} onChange={(e) => setWin([Math.min(Number(e.target.value), t2), t2])} className="flex-1 accent-[var(--color-brand-600)]" />
-                  <input type="range" min={m.y0} max={m.y1} value={t2} onChange={(e) => setWin([t1, Math.max(Number(e.target.value), t1)])} className="flex-1 accent-[var(--color-brand-600)]" />
-                  <button className="btn btn-ghost btn-sm" onClick={() => setWin([m.y0, m.y1])}>All</button>
-                </div>
-              )}
-            </div>
+            {m && <TimeSeeker y0={m.y0} y1={m.y1} asOf={asOf && asOf <= m.y1 ? asOf : undefined} value={[t1, t2]} onChange={setWin} />}
             {axisFig && <Plot data={axisFig.data} layout={axisFig.layout as any} height={130}
               onClick={(pt: any) => setWin([Number(pt.x), Number(pt.x)])} />}
             {L.pockets && <Note>Rising pockets (green rings): recent papers whose closest earlier neighbours are filling up faster than last year's (top 5%). "This small neighbourhood is getting busier": a place to look, not a forecast (about twice random in the backtest). A paper recorded twice in OpenAlex can make a false pocket.</Note>}

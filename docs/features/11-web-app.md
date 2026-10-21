@@ -150,10 +150,14 @@ scopes the whole sheet. The sheet has:
   rank, first and peak year;
 - how it relates to the other facets: where its papers fall in each other facet, with lift against the
   whole map in the same window, in the window or over time; a row filters the papers;
+- its journals: one row per venue with a strip of papers per year (reaching back to the category's first
+  paper), papers in the window and in all years, lift against the whole map (`/p/{p}/venues`), and the
+  year of the latest paper there and its age against the as-of year, so a venue that carried the topic
+  years ago is not mistaken for one that carries it now; search, six sorts, and a row filters the papers;
 - citations with its sibling categories, and the signals that name it (bridges, papers to bring in,
   method transfer, new combinations; direction labels for other α);
-- its papers: search over titles and facet statements, five sorts, filters by window, stated limitation
-  and categories in the other facets, and a CSV download.
+- its papers, each with its journal and year: search over titles, journals and facet statements, five
+  sorts, filters by window, stated limitation, journal and categories in the other facets, and a CSV download.
 
 `?with=<cluster id>` opens a sheet already filtered (the grid and the matrix use it). Other clusters (other
 α or resolution, from the map or Cluster review) open the same sheet, marked as not a reference category.
@@ -165,10 +169,58 @@ papers it builds on and those citing it (each opens its own card), and links to 
 link or a reload reopens it. *Show on the map* from a sheet selects the category; from a paper it adds a
 star at `focus=<id>` and zooms there. Pan and zoom now survive layer and window changes.
 
+**Timing of opportunities** (`web/timing.py`). Hidden gems, papers to bring in, limitation → innovation
+pairs, method transfer and underconnected pairs each carry when they sit in time, as of the portfolio's
+year T (Start here, Map › Bridges, the details sheets):
+- a paper is **fresh** (T-2..T), or else judged by its line of work (its innovation category, else its problem
+  category): **active line** (share held or grew, T-2..T against T-5..T-3), **fading line** (lost share) or
+  **revival** (under half its earlier share, or under 3 recent papers); with its latest citation from the field;
+- a limitation → innovation pair shows the years of its evidence (**fresh answer**, **still stated**, **older
+  pairing**) and whether the limitation side already cites the innovation side (**closing**, **steady**,
+  **still open**);
+- method transfer shows the method's and the problem's lines, and the method's use by similar problems,
+  recent against before (spreading, steady, cooling).
+
+Trends compare shares, so a corpus that thins in recent years does not read as decline. None of this was
+backtested as a predictor: it is context for the researcher, not part of any ranking.
+
+**Sorting everywhere** (`components/Sort.tsx`). Every list of papers or candidates has a sort bar of icon
+buttons: the list's own order first (reading order, ranked, most typical), then year, citations in this map,
+citations overall, and title, plus list-specific keys (judge score, lift, closeness, source of recent methods,
+papers built on). A second click reverses; the label at the end says the current order. The choice is kept
+per kind of list across visits. Lists that only carry ids get year and citations from `POST
+/p/<project>/paper-meta`. Table headers show ⇅ where a column sorts (click again to reverse, a third time for
+the original order).
+
 **Finding your way.** Opening a sheet or a paper adds a history entry, so Back closes it. The sidebar groups
 pages into Explore, Evidence and Review. Search (⌘K or `/`) finds papers, categories of every facet,
-pages and projects, and lists what you opened recently. `g` then a letter goes to a page; `?` lists the
-shortcuts. Start here has a section bar, and its community names open their sheets.
+pages, projects and actions (theme, sidebar, copy link, pipeline), and lists what you opened recently.
+`g` then a letter goes to a page; `?` lists the shortcuts. Start here has a section bar that marks the
+section on screen, and its community names open their sheets. Each page names itself in the browser tab
+("Facets · dro-pilot"). My paper suggests recently opened papers and the field's *Read now* list before
+you type.
+
+The usability pass that added the behaviour below, with what changed and how it was checked, is in
+[11b-web-app-ux.md](11b-web-app-ux.md).
+
+**One time window.** The year window is shared per project: setting it in Facets, the map or any details
+sheet sets it for the others, and it survives a reload (browser storage). Until you set one, Facets and the
+sheets show the last three complete years and the map shows every year. A map link's `w` sets it.
+
+**While things load and run.**
+- Changing the map's facet, α or resolution keeps the old map under a loading veil, and searches keep the
+  previous results while the next ones load. A thin bar at the top shows that something new is loading.
+- Pages and Plotly load when first opened.
+- A pipeline job that finishes or fails while the app is open pops up a notice, and a finished one
+  refreshes that project's views. Queuing a job and copying a link confirm in the same way.
+
+**Tables and charts.** Every table exports what it shows as CSV (the button in its corner on hover). Wide
+category tables drop their sparkline and size columns in narrow cards. Charts and map labels follow the
+light or dark theme when it changes. Map labels are placed so they do not overlap: the selected cluster
+first, then flagged ones, then the largest in the window.
+
+**Sheets and drawers** lock the page behind them, take keyboard focus, and give it back when they close;
+Esc closes the top one only.
 
 ## Reading while a step writes
 
@@ -194,7 +246,7 @@ Everything is under `/api`:
   `clusters/…`, `paper/<id>`, `search` and `reviews`;
 - the facet categories (`views_facets.py`): `catalogue` (every facet's categories with yearly counts),
   `category/<cluster id>` (the sheet: papers with their other categories, flows, signals),
-  `cooccurrence?a=&b=` and `categories/search`.
+  `cooccurrence?a=&b=`, `categories/search` and `paper-meta` (POST ids: year and citations, for sorting).
 
 The view endpoints port the Streamlit computations one for one. Large tables (map points) are sent as
 columns, and the time window, layers and selection are applied in the browser.

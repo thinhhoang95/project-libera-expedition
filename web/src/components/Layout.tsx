@@ -1,10 +1,10 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
   Bell, Boxes, CheckCircle2, Clock, Compass, FileText, FlaskConical, FolderKanban, Grid2x2, Home, Keyboard, Layers3,
   ListChecks, Loader2, Menu, Microscope, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Shapes, Sun, Tags, Workflow, X, XCircle,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, qs, useApi, type Job, type Project } from "../api";
 import { LS, getRecents, initials, useCategorySheet, usePaperDrawer, useReviewer, useTheme } from "../context";
@@ -12,7 +12,9 @@ import { FACET_META, FACET_ORDER, type FacetKey } from "../facets";
 import { CategorySheet } from "./CategorySheet";
 import { Dot } from "./Facets";
 import { PaperDrawer } from "./PaperDrawer";
-import { Boundary } from "./ui";
+import { isTopOverlay, useOverlay } from "./overlay";
+import { Toaster, copyText, toast } from "./Toasts";
+import { Boundary, PageSkeleton } from "./ui";
 
 export const NAV = [
   { to: "start", label: "Start", icon: Home, group: "Explore", key: "s" },
@@ -192,24 +194,57 @@ function Sidebar({ onNavigate, collapsed, onToggle }: { onNavigate?: () => void;
   );
 }
 
+// ------------------------------------------------------------------ loading bar
+
+/** A thin bar across the top while something new loads (not while polls refresh what is already shown). */
+function TopProgress() {
+  const n = useIsFetching({ predicate: (q) => q.state.data === undefined });
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    if (!n) return setShow(false);
+    const t = setTimeout(() => setShow(true), 220); // quick answers never flash the bar
+    return () => clearTimeout(t);
+  }, [n > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+  return show ? <div className="top-progress" role="progressbar" aria-label="Loading" /> : null;
+}
+
 // ------------------------------------------------------------------ command palette (⌘K)
 
 type Item = { key: string; label: ReactNode; hint: ReactNode; go: () => void; group: string };
 
-function SearchPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
+/** The term in `text`, emphasised. */
+function Hl({ text, term }: { text: string; term: string }) {
+  const i = term ? text.toLowerCase().indexOf(term.toLowerCase()) : -1;
+  if (i < 0) return <>{text}</>;
+  return <>{text.slice(0, i)}<mark className="rounded-sm bg-brand-500/15 px-px text-inherit">{text.slice(i, i + term.length)}</mark>{text.slice(i + term.length)}</>;
+}
+
+function useDebounced<T>(v: T, ms: number) {
+  const [d, setD] = useState(v);
+  useEffect(() => {
+    const h = setTimeout(() => setD(v), ms);
+    return () => clearTimeout(h);
+  }, [v, ms]);
+  return d;
+}
+
+function SearchPalette({ open, onClose, onToggleSidebar, onHelp }: { open: boolean; onClose: () => void; onToggleSidebar: () => void; onHelp: () => void }) {
   const { project } = useParams();
   const nav = useNavigate();
   const sheet = useCategorySheet();
   const drawer = usePaperDrawer();
+  const [theme, setTheme] = useTheme();
   const [term, setTerm] = useState("");
   const [sel, setSel] = useState(0);
-  const { data: hits } = useApi<{ paper_id: string; title: string; year: number }[]>(
-    project && term.length >= 2 ? `/p/${project}/search` + qs({ term, limit: 10 }) : null,
+  const q = useDebounced(term.trim(), 160); // one request per pause in typing, not per key
+  const { data: hits, isFetching: f1 } = useApi<{ paper_id: string; title: string; year: number }[]>(
+    project && q.length >= 2 ? `/p/${project}/search` + qs({ term: q, limit: 10 }) : null, { keep: true },
   );
-  const { data: cats } = useApi<{ facet: FacetKey; cluster_id: string; label: string; size: number; color: string }[]>(
-    project && term.length >= 2 ? `/p/${project}/categories/search` + qs({ term, limit: 8 }) : null,
+  const { data: cats, isFetching: f2 } = useApi<{ facet: FacetKey; cluster_id: string; label: string; size: number; color: string }[]>(
+    project && q.length >= 2 ? `/p/${project}/categories/search` + qs({ term: q, limit: 8 }) : null, { keep: true },
   );
   const { data: projects } = useApi<Project[]>("/projects");
+  const ref = useOverlay<HTMLDivElement>(open, { autoFocus: false });
   useEffect(() => {
     if (open) {
       setTerm("");
@@ -217,8 +252,21 @@ function SearchPalette({ open, onClose }: { open: boolean; onClose: () => void }
     }
   }, [open]);
   if (!open) return null;
-  const t = term.toLowerCase();
+  const t = term.trim().toLowerCase();
+  const live = t.length >= 2;
   const recents = project && !t ? getRecents(project) : [];
+  const actions: { label: string; hint: string; go: () => void; when?: boolean }[] = [
+    { label: `Theme: ${theme === "dark" ? "light" : "dark"}`, hint: "Appearance", go: () => setTheme(theme === "dark" ? "light" : "dark") },
+    { label: "Theme: follow the system", hint: "Appearance", go: () => setTheme("system"), when: theme !== "system" },
+    { label: "Collapse or expand the sidebar", hint: "⌘B", go: onToggleSidebar },
+    { label: "Copy a link to this view", hint: "Link", go: () => copyText(window.location.href) },
+    { label: "Keyboard shortcuts", hint: "?", go: onHelp },
+    { label: "Open the pipeline", hint: "Run steps", go: () => nav(`/p/${project}/pipeline`), when: !!project },
+    { label: "Job queue", hint: "All projects", go: () => nav("/queue") },
+    { label: "New project", hint: "From seed DOIs", go: () => nav("/new") },
+  ];
+  const actionItems: Item[] = actions.filter((a) => a.when !== false && (!t || a.label.toLowerCase().includes(t)))
+    .map((a) => ({ key: "a" + a.label, group: "Actions", label: <Hl text={a.label} term={t} />, hint: a.hint, go: a.go }));
   const items: Item[] = [
     ...recents.map((r) => ({
       key: "r" + r.kind + r.id, group: "Recent",
@@ -228,41 +276,44 @@ function SearchPalette({ open, onClose }: { open: boolean; onClose: () => void }
     })),
     ...(project
       ? NAV.filter((n) => n.label.toLowerCase().includes(t)).map((n) => ({
-          key: "nav" + n.to, group: "Pages", label: n.label, hint: <span>Page <kbd className="key ml-1">g</kbd> <kbd className="key">{n.key}</kbd></span>,
+          key: "nav" + n.to, group: "Pages", label: <Hl text={n.label} term={t} />, hint: <span>Page <kbd className="key ml-1">g</kbd> <kbd className="key">{n.key}</kbd></span>,
           go: () => nav(`/p/${project}/${n.to}`),
         }))
       : []),
-    ...(project && t.length >= 2
+    ...(project && live
       ? FACET_ORDER.filter((f) => FACET_META[f].plural.toLowerCase().includes(t)).map((f) => ({
           key: "fx" + f, group: "Pages", label: `Explore ${FACET_META[f].plural.toLowerCase()}`, hint: "Facet", go: () => nav(`/p/${project}/explore/${f}`),
         }))
       : []),
-    ...(cats ?? []).map((c) => ({
+    ...(t ? actionItems : []),
+    ...(live ? cats ?? [] : []).map((c) => ({
       key: c.cluster_id, group: "Categories",
-      label: <span className="flex items-center gap-2"><Dot color={c.color} /><span className="truncate">{c.label}</span></span>,
+      label: <span className="flex items-center gap-2"><Dot color={c.color} /><span className="truncate"><Hl text={c.label} term={t} /></span></span>,
       hint: <span><span style={{ color: FACET_META[c.facet]?.color }} className="font-semibold">{FACET_META[c.facet]?.label}</span> · {c.size} papers</span>,
       go: () => sheet.open(c.cluster_id),
     })),
-    ...(hits ?? []).map((h) => ({
+    ...(live ? hits ?? [] : []).map((h) => ({
       key: h.paper_id, group: "Papers",
-      label: (<span><span className="faint mr-2">{h.year}</span>{h.title}</span>),
+      label: (<span><span className="faint mr-2">{h.year}</span><Hl text={h.title} term={t} /></span>),
       hint: "Open paper",
       go: () => drawer.open(h.paper_id),
     })),
     ...(projects ?? [])
       .filter((p) => (t ? p.name.toLowerCase().includes(t) || p.id.includes(t) : p.id !== project))
       .slice(0, 4)
-      .map((p) => ({ key: "p" + p.id, group: "Projects", label: p.name, hint: "Project", go: () => nav(`/p/${p.id}/start`) })),
+      .map((p) => ({ key: "p" + p.id, group: "Projects", label: <Hl text={p.name} term={t} />, hint: "Project", go: () => nav(`/p/${p.id}/start`) })),
+    ...(t ? [] : actionItems), // typed: matching actions come before categories and papers
   ];
   const go = (i: number) => {
     onClose();
     items[i]?.go();
   };
+  const loading = live && (f1 || f2 || q !== term.trim());
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/30 px-4 pt-[12vh] backdrop-blur-[2px]" onClick={onClose}>
-      <div className="card w-full max-w-2xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="anim-fade fixed inset-0 z-50 flex items-start justify-center bg-slate-900/30 px-4 pt-[12vh] backdrop-blur-[2px]" onClick={onClose}>
+      <div ref={ref} role="dialog" aria-modal="true" aria-label="Search" className="anim-pop card w-full max-w-2xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 border-b border-[var(--line)] px-4">
-          <Search className="faint size-4" />
+          {loading ? <Loader2 className="faint size-4 animate-spin" /> : <Search className="faint size-4" />}
           <input
             autoFocus
             value={term}
@@ -276,19 +327,22 @@ function SearchPalette({ open, onClose }: { open: boolean; onClose: () => void }
               if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
               if (e.key === "Enter") go(sel);
             }}
-            placeholder={project ? "Search papers, categories (problems, methods…), pages, projects…" : "Search projects…"}
+            placeholder={project ? "Search papers, categories, pages, actions…" : "Search projects and actions…"}
+            aria-label="Search"
             className="h-12 flex-1 bg-transparent text-[14.5px] text-[var(--text-strong)] outline-none"
           />
           <kbd className="faint text-[11px]">esc</kbd>
         </div>
-        <div className="scroll-thin max-h-[55vh] overflow-y-auto p-1.5">
-          {items.length === 0 && <div className="muted px-3 py-6 text-center text-[13px]">{term.length < 2 ? "Type to search" : "No matches"}</div>}
+        <div className="scroll-thin max-h-[55vh] overflow-y-auto p-1.5" role="listbox">
+          {items.length === 0 && <div className="muted px-3 py-6 text-center text-[13px]">{loading ? "Searching…" : t.length < 2 ? "Type to search" : `Nothing matches “${term.trim()}”`}</div>}
           {items.map((it, i) => (
             <div key={it.key}>
               {(i === 0 || items[i - 1].group !== it.group) && <div className="faint px-3 pt-2 pb-1 text-[11px] font-semibold tracking-wide uppercase">{it.group}</div>}
               <button
                 ref={(el) => { if (el && i === sel) el.scrollIntoView({ block: "nearest" }); }}
-                onMouseEnter={() => setSel(i)}
+                role="option"
+                aria-selected={i === sel}
+                onMouseMove={() => sel !== i && setSel(i)}
                 onClick={() => go(i)}
                 className={clsx("flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-[13.5px]", i === sel && "bg-[var(--nav-active)]")}
               >
@@ -310,6 +364,12 @@ function SearchPalette({ open, onClose }: { open: boolean; onClose: () => void }
 // ------------------------------------------------------------------ keyboard shortcuts
 
 function Shortcuts({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const ref = useOverlay<HTMLDivElement>(open);
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => e.key === "Escape" && isTopOverlay(ref.current) && onClose();
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onClose]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!open) return null;
   const rows: [ReactNode, string][] = [
     [<><kbd className="key">⌘</kbd> <kbd className="key">K</kbd> or <kbd className="key">/</kbd></>, "Search papers, categories, pages"],
@@ -319,11 +379,11 @@ function Shortcuts({ open, onClose }: { open: boolean; onClose: () => void }) {
     ...NAV.map((n) => [<><kbd className="key">g</kbd> <kbd className="key">{n.key}</kbd></>, `Go to ${n.label}`] as [ReactNode, string]),
   ];
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/30 px-4 pt-[12vh]" onClick={onClose}>
-      <div className="card w-full max-w-md p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="anim-fade fixed inset-0 z-50 flex items-start justify-center bg-slate-900/30 px-4 pt-[12vh]" onClick={onClose}>
+      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" className="anim-pop card w-full max-w-md p-5 shadow-2xl outline-none" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="h-title flex items-center gap-2 text-[15px]"><Keyboard className="size-4" /> Keyboard shortcuts</h2>
-          <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose}><X className="size-4" /></button>
+          <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose} aria-label="Close"><X className="size-4" /></button>
         </div>
         <ul className="flex flex-col">
           {rows.map(([k, l], i) => (
@@ -344,6 +404,25 @@ function Notifications() {
   const qc = useQueryClient();
   const { data } = useQuery({ queryKey: ["events"], queryFn: () => api<{ events: Ev[]; unseen: number }>("/events"), refetchInterval: 5000 });
   const ref = useRef<HTMLDivElement>(null);
+  // events that arrive while the app is open pop up as toasts; a finished step also refreshes that project's views
+  const lastId = useRef<number | null>(null);
+  useEffect(() => {
+    const evs = data?.events ?? [];
+    if (!data) return;
+    const top = Math.max(0, ...evs.map((e) => e.id));
+    if (lastId.current == null) {
+      lastId.current = top;
+      return;
+    }
+    const fresh = evs.filter((e) => e.id > lastId.current!).sort((a, b) => a.id - b.id);
+    lastId.current = Math.max(lastId.current, top);
+    fresh.forEach((e) => {
+      if (e.level === "success" && e.project)
+        qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith(`/p/${e.project}/`) || String(q.queryKey[0]).startsWith("/projects") });
+      if (e.level === "success" || e.level === "error")
+        toast({ title: e.message, body: e.project ?? undefined, tone: e.level, href: e.project ? `/p/${e.project}/pipeline` : "/queue", linkLabel: "Open the pipeline" });
+    });
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const h = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
     document.addEventListener("mousedown", h);
@@ -399,7 +478,7 @@ function Topbar({ onSearch, onMenu, onHelp }: { onSearch: () => void; onMenu: ()
   const { data: p } = useApi<Project>(project ? `/projects/${project}` : null);
   return (
     <header className="sticky top-0 z-30 flex h-[60px] items-center gap-3 border-b border-[var(--line)] bg-[var(--surface)]/85 px-4 backdrop-blur md:px-6">
-      <button className="btn btn-ghost btn-icon lg:hidden" onClick={onMenu}><Menu className="size-5" /></button>
+      <button className="btn btn-ghost btn-icon lg:hidden" onClick={onMenu} aria-label="Open the menu"><Menu className="size-5" /></button>
       <button
         onClick={onSearch}
         className="flex h-10 min-w-0 max-w-xl flex-1 items-center gap-2.5 rounded-[10px] border border-[var(--line)] bg-[var(--surface-2)] px-3 text-left text-[13.5px] text-[var(--faint)] hover:border-[var(--line-strong)]"
@@ -420,10 +499,25 @@ function Topbar({ onSearch, onMenu, onHelp }: { onSearch: () => void; onMenu: ()
   );
 }
 
+const OTHER_TITLES: Record<string, string> = { pipeline: "Pipeline", new: "New project", queue: "Job queue" };
+
+/** The browser tab says where you are: "Facets · dro-pilot", so tabs and history entries can be told apart. */
+function useDocumentTitle() {
+  const loc = useLocation();
+  const { project } = useParams();
+  const { data: p } = useApi<Project>(project ? `/projects/${project}` : null);
+  useEffect(() => {
+    const seg = project ? loc.pathname.split("/")[3] ?? "start" : loc.pathname.split("/")[1] ?? "";
+    const page = NAV.find((n) => n.to === seg)?.label ?? OTHER_TITLES[seg] ?? (project ? "" : "Projects");
+    document.title = [page, project ? p?.name ?? project : null, "Libera Expedition"].filter(Boolean).join(" · ");
+  }, [loc.pathname, project, p?.name]);
+}
+
 export function Layout() {
   const loc = useLocation();
   const nav = useNavigate();
   const { project } = useParams();
+  useDocumentTitle();
   const [search, setSearch] = useState(false);
   const [help, setHelp] = useState(false);
   const chord = useRef<number>(0);
@@ -460,13 +554,14 @@ export function Layout() {
   }, [project]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="flex min-h-full">
+      <TopProgress />
       <aside className={clsx("hidden shrink-0 border-r border-[var(--line)] bg-[var(--surface)] whitespace-nowrap lg:block",
         collapsed ? "w-[72px]" : "w-[272px]")}>
         <div className="sticky top-0 h-screen overflow-hidden"><Sidebar collapsed={collapsed} onToggle={toggle} /></div>
       </aside>
       {menu && (
-        <div className="fixed inset-0 z-50 bg-slate-900/30 lg:hidden" onClick={() => setMenu(false)}>
-          <aside className="h-full w-[280px] bg-[var(--surface)] shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="anim-fade fixed inset-0 z-50 bg-slate-900/30 lg:hidden" onClick={() => setMenu(false)}>
+          <aside className="anim-slide-left h-full w-[280px] bg-[var(--surface)] shadow-xl" onClick={(e) => e.stopPropagation()}>
             <button className="btn btn-ghost btn-icon absolute top-3 left-[236px]" onClick={() => setMenu(false)}><X className="size-5" /></button>
             <Sidebar onNavigate={() => setMenu(false)} />
           </aside>
@@ -476,14 +571,17 @@ export function Layout() {
         <Topbar onSearch={() => setSearch(true)} onMenu={() => setMenu(true)} onHelp={() => setHelp(true)} />
         <main className="min-w-0 flex-1 px-4 py-5 md:px-7 md:py-6">
           <Boundary resetKey={loc.pathname}>
-            <Outlet />
+            <Suspense fallback={<PageSkeleton />}>
+              <Outlet />
+            </Suspense>
           </Boundary>
         </main>
       </div>
-      <SearchPalette open={search} onClose={() => setSearch(false)} />
+      <SearchPalette open={search} onClose={() => setSearch(false)} onToggleSidebar={toggle} onHelp={() => setHelp(true)} />
       <Shortcuts open={help} onClose={() => setHelp(false)} />
       <CategorySheet />
       <PaperDrawer />
+      <Toaster />
     </div>
   );
 }

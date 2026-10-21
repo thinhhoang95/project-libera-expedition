@@ -6,6 +6,9 @@ import { api, useApi } from "../api";
 import { usePaperDrawer, useRecordRecent, useReviewer } from "../context";
 import { FACET_META, mapHref, type FacetKey } from "../facets";
 import { CatLink, Dot } from "./Facets";
+import { by, useSortedList } from "./Sort";
+import { isTopOverlay, useOverlay } from "./overlay";
+import { copyText } from "./Toasts";
 import { ErrorBox, Pill, Spinner } from "./ui";
 
 type Cited = { paper_id: string; title: string; year: number | null; cites_here: number };
@@ -19,12 +22,16 @@ type Card = {
 };
 
 function CitedList({ title, rows, total }: { title: string; rows: Cited[]; total: number }) {
+  const { sorted, bar } = useSortedList(rows, [by.citedHere<Cited>((r) => r.cites_here), by.year<Cited>((r) => r.year), by.title<Cited>((r) => r.title)], "drawer-cited");
   return (
     <div>
-      <div className="muted mb-1 text-[12px] font-semibold">{title} <span className="faint font-normal">({total})</span></div>
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <span className="muted text-[12px] font-semibold">{title} <span className="faint font-normal">({total})</span></span>
+        {rows.length > 1 && bar}
+      </div>
       {rows.length ? (
         <ul className="flex flex-col gap-0.5">
-          {rows.map((r) => (
+          {sorted.map((r) => (
             <li key={r.paper_id} className="flex gap-2 text-[12.5px]">
               <span className="faint w-9 shrink-0 tabular-nums">{r.year ?? "—"}</span>
               <PaperLink pid={r.paper_id} title={r.title} className="min-w-0 flex-1" />
@@ -106,26 +113,27 @@ export function PaperCard({ pid, compact }: { pid: string; compact?: boolean }) 
 export function PaperDrawer() {
   const { paper, open } = usePaperDrawer();
   const { project } = useParams();
-  const [copied, setCopied] = useState(false);
+  const ref = useOverlay<HTMLElement>(!!paper && !!project);
   useEffect(() => {
-    const h = (e: KeyboardEvent) => e.key === "Escape" && !(e.target as HTMLElement)?.closest?.("input, textarea") && open(null);
+    const h = (e: KeyboardEvent) => e.key === "Escape" && isTopOverlay(ref.current) && !(e.target as HTMLElement)?.closest?.("input, textarea") && open(null);
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [open]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!paper || !project) return null;
   return (
-    <div className="fixed inset-0 z-[45] flex justify-end bg-slate-900/20" onClick={() => open(null)}>
-      <aside className="scroll-thin h-full w-full max-w-[580px] overflow-y-auto bg-[var(--surface)] px-6 py-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="anim-fade fixed inset-0 z-[45] flex justify-end bg-slate-900/20" onClick={() => open(null)}>
+      <aside ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Paper"
+        className="anim-slide scroll-thin h-full w-full max-w-[580px] overflow-y-auto bg-[var(--surface)] px-6 py-5 shadow-2xl outline-none" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <span className="muted flex items-center gap-1.5 text-[12.5px] font-medium"><FileText className="size-4" /> Paper</span>
           <div className="flex flex-wrap items-center gap-1.5">
             <Link to={mapHref(project, { paper })} className="btn btn-sm" title="Problem map, α = 0.5"><MapIcon className="size-3.5" /> Show on the map</Link>
             <Link to={`/p/${project}/paper/${paper}`} className="btn btn-sm">Analyse in My paper</Link>
-            <button className="btn btn-ghost btn-icon btn-sm" title={copied ? "Copied" : "Copy a link to this paper"}
-              onClick={() => { navigator.clipboard?.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
-              {copied ? <Check className="size-4 text-emerald-600" /> : <Link2 className="size-4" />}
+            <button className="btn btn-ghost btn-icon btn-sm" title="Copy a link to this paper" aria-label="Copy a link to this paper"
+              onClick={() => copyText(window.location.href)}>
+              <Link2 className="size-4" />
             </button>
-            <button className="btn btn-ghost btn-icon btn-sm" title="Close (Esc)" onClick={() => open(null)}><X className="size-4" /></button>
+            <button className="btn btn-ghost btn-icon btn-sm" title="Close (Esc)" aria-label="Close" onClick={() => open(null)}><X className="size-4" /></button>
           </div>
         </div>
         <PaperCard pid={paper} />

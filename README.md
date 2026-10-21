@@ -60,7 +60,8 @@ limitations) has browsable categories, each with a details sheet: its papers, it
 to the other facets in any time window. It shows every view of the explorer, and its job
 queue runs the whole pipeline with progress you can pause and resume. Pages stay usable while a step
 runs, because the app reads a copy of the database published after each step. See
-[11-web-app.md](docs/features/11-web-app.md).
+[11-web-app.md](docs/features/11-web-app.md), and [11b-web-app-ux.md](docs/features/11b-web-app-ux.md) for the usability
+pass (shared time window, readable map labels, CSV on every table, job notices).
 
 ## Setup
 

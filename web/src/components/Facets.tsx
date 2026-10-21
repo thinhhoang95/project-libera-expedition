@@ -144,12 +144,12 @@ export function CategoryTable({ block, y0, t1, t2, sparkFrom, maxHeight, filter,
           <input type="checkbox" checked={picked?.has(r.cluster_id) ?? false} title="Compare trends"
             onClick={(e) => e.stopPropagation()} onChange={() => onPick(r.cluster_id)} className="accent-[var(--color-brand-600)]" />
         ) }] : []),
-        { key: "label", label: FACET_META[block.facet].label, className: "min-w-[240px]", render: (r: CatRow) => (
+        { key: "label", label: FACET_META[block.facet].label, className: "min-w-[200px]", render: (r: CatRow) => (
           <span className="flex items-center gap-2 text-[var(--text-strong)]"><Dot color={r.color} />
             <span className="hover:text-brand-600">{r.label}</span>{r.kind === "hub" && <span className="faint" title="hub: a large, coherent body of work with a shifting boundary">◇</span>}</span>
         ) },
-        { key: "size", label: "Papers", align: "right" as const },
-        { key: "series", label: `${sparkFrom}–${y0 + block.totals.length - 1}`, sortable: false, render: (r: CatRow) => <Sparkline values={r.series} width={84} height={22} fill={false} color={r.color} /> },
+        { key: "size", label: "Papers", align: "right" as const, narrow: true },
+        { key: "series", label: `${sparkFrom}–${y0 + block.totals.length - 1}`, sortable: false, narrow: true, render: (r: CatRow) => <Sparkline values={r.series} width={84} height={22} fill={false} color={r.color} /> },
         { key: "n", label: win, align: "right" as const, title: "Papers in the window" },
         { key: "share", label: "Share", align: "right" as const, render: (r: CatRow) => pct(r.share, 1), title: `Share of the ${FACET_META[block.facet].plural.toLowerCase()} in the window` },
         { key: "change", label: "Δ share", align: "right" as const, title: "Against the window of the same length just before",

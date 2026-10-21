@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "../components/Toasts";
 import { Play } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -70,7 +71,10 @@ function useRunSteps() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (steps: string[]) => api<Job>("/jobs", { method: "POST", json: { project: p, steps } }),
-    onSuccess: () => qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/jobs") }),
+    onSuccess: (j) => {
+      toast({ title: `Queued: ${j.title}`, tone: "success", href: `/p/${j.project}/pipeline`, linkLabel: "Follow it on the Pipeline page" });
+      qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/jobs") });
+    },
   });
 }
 

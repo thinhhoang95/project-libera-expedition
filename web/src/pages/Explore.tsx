@@ -1,14 +1,13 @@
 import clsx from "clsx";
 import { Grid3x3, LineChart, Search, Shapes } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { qs, useApi } from "../api";
-import { setSheetWindow } from "../components/CategorySheet";
 import { CategoryTable, CompareTrends, Dot, TimeSeeker } from "../components/Facets";
 import { PageHeader } from "../components/Layout";
-import { Plot } from "../components/Plot";
-import { Card, Empty, Note, Seg, Spinner } from "../components/ui";
-import { LS, useCategorySheet, useProjectId } from "../context";
+import { HEAT, Plot } from "../components/Plot";
+import { Card, Empty, Note, PageSkeleton, Seg, Spinner } from "../components/ui";
+import { LS, useCategorySheet, useProjectId, useSharedWindow } from "../context";
 import { FACET_META, FACET_ORDER, useCatalogue, type FacetKey } from "../facets";
 
 export function Explore() {
@@ -17,13 +16,11 @@ export function Explore() {
   const facet = (useParams().facet as FacetKey) || (LS.get("libera.explore.facet") as FacetKey) || "problem";
   const cat = useCatalogue(p);
   const d = cat.data;
-  const [win, setWin] = useState<[number, number] | null>(null);
+  const [win, setWin] = useSharedWindow(p);
   const [filter, setFilter] = useState("");
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   const [mode, setMode] = useState<"share" | "papers">("share");
-  const w0 = win?.[0] ?? (d ? Math.max(d.y0, d.as_of - 2) : 0), w1 = win?.[1] ?? d?.as_of ?? 0;
-  useEffect(() => { if (d?.built) setSheetWindow([w0, w1]); }, [w0, w1, d?.built]); // sheets opened here start on this window
-  if (cat.isLoading) return <Spinner />;
+  if (cat.isLoading) return <PageSkeleton stats={false} />;
   if (!d?.built)
     return (
       <div className="mx-auto max-w-3xl">
@@ -34,7 +31,7 @@ export function Explore() {
       </div>
     );
   const T = d.as_of;
-  const [t1, t2] = win ?? [Math.max(d.y0, T - 2), T];
+  const [t1, t2] = win && win[0] >= d.y0 && win[1] <= d.y1 ? win : [Math.max(d.y0, T - 2), T];
   const block = cat.facet.get(facet)!;
   const ids = picked[facet] ?? [];
   const pick = (cid: string) => setPicked((x) => {
@@ -108,7 +105,7 @@ function CrossMatrix({ p, facet, t1, t2, y0 }: { p: string; facet: FacetKey; t1:
   const others = FACET_ORDER.filter((f) => f !== facet && f !== "limitations");
   const [b, setB] = useState<FacetKey>(facet === "problem" ? "method" : "problem");
   const other = b === facet ? others[0] : b;
-  const { data, isLoading } = useApi<{ a: string[]; b: string[]; year: number[]; n: number[] }>(`/p/${p}/cooccurrence` + qs({ a: facet, b: other }));
+  const { data, isLoading } = useApi<{ a: string[]; b: string[]; year: number[]; n: number[] }>(`/p/${p}/cooccurrence` + qs({ a: facet, b: other }), { keep: true });
   const [norm, setNorm] = useState<"n" | "row">("row");
   const fig = useMemo(() => {
     if (!data) return null;
@@ -129,7 +126,7 @@ function CrossMatrix({ p, facet, t1, t2, y0 }: { p: string; facet: FacetKey; t1:
     return {
       rows, cols,
       data: [{ type: "heatmap", z: zz, customdata: z, x: cols.map(lab), y: rows.map(lab), xgap: 1, ygap: 1, showscale: false,
-        colorscale: [[0, "#f3f6fb"], [0.15, "#cfe0f7"], [1, "#0359ad"]],
+        colorscale: HEAT,
         hovertemplate: norm === "row" ? "%{y}<br>× %{x}<br>%{customdata} papers (%{z:.0%} of the row)<extra></extra>" : "%{y}<br>× %{x}<br>%{customdata} papers<extra></extra>" }],
       layout: { margin: { l: 260, r: 6, t: 4, b: 190 }, xaxis: { tickangle: -40, tickfont: { size: 10 } }, yaxis: { autorange: "reversed", tickfont: { size: 10 } } },
     };

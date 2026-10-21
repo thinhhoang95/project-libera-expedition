@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from fastapi import HTTPException
 
+from . import timing as tm
 from .data import Router, artefact, columns, jl, memo, portfolio_file, q, records, titles
 
 router = Router()
@@ -162,14 +163,27 @@ def _bridge_title(s: dict) -> str:
 @memo()
 def bridges(p: str) -> dict:
     b = _signals(p, tuple(BRIDGE_TYPES))
+    b = b[(b["rank"] <= 50)]
+    T = tm.as_of(p)
+    feats = [jl(f) for f in b.features]
+    years = tm.year_map([x for f in feats for pr in f.get("pairs", []) for x in (pr["limitation"], pr["innovation"])])
     out = {t: [] for t in BRIDGE_TYPES}
-    for r in b.itertuples():
-        if r.rank > 50 and r.signal_type != "bridge_lim_inn":
-            continue
-        out[r.signal_type].append({"rank": int(r.rank), "candidate": _bridge_title(jl(r.subject)),
-                                   "judge": None if pd.isna(r.judge_score) else float(r.judge_score),
-                                   "score": round(float(r.score), 4)})
-    return {"types": BRIDGE_TYPES, "lists": {k: v[:50] for k, v in out.items()}}
+    for r, f in zip(b.itertuples(), feats):
+        s = jl(r.subject)
+        row = {"rank": int(r.rank), "candidate": _bridge_title(s),
+               "judge": None if pd.isna(r.judge_score) else float(r.judge_score), "score": round(float(r.score), 4)}
+        if r.signal_type == "bridge_lim_inn":  # when the evidence is from, and whether A already cites B
+            w = tm.pair_when(f.get("pairs", []), T, years)
+            row.update(timing=w["timing"], lim_years=w["limitation_years"], inn_years=w["innovation_years"],
+                       flow=tm.flow_change(p, s.get("from_cluster"), s.get("to_cluster"), T), status=f.get("status"))
+        elif r.signal_type == "bridge_method_transfer":
+            ln = tm.line(p, s.get("method_cluster"), T)
+            row.update(trend=ln and ln["trend"], line=ln)
+        else:
+            ln = tm.line(p, s.get("cluster_id", s.get("cluster_a")), T)
+            row.update(trend=ln and ln["trend"], line=ln)
+        out[r.signal_type].append(row)
+    return {"types": BRIDGE_TYPES, "as_of": T, "lists": {k: v[:50] for k, v in out.items()}}
 
 
 @router.get("/p/{p}/bridges/{typ}/{rank}")
@@ -212,16 +226,20 @@ def paper_bridges(p: str) -> dict:
     kinds = dict(zip(b.cluster_id, b.group_kind))
     clusters = [{"cluster_id": c, "label": labs[c], "kind": kinds.get(c), "size": size.get(c)}
                 for c in sorted(labs, key=lambda c: -(size.get(c) or 0))]
+    T = tm.as_of(p)
+    when = tm.paper_when(p, [s["paper_id"] for s in b.subj], T)
     lists: dict = {}
     for r in b.sort_values("rank").itertuples():
         f = jl(r.features)
+        w = when.get(r.subj["paper_id"]) or {}
         lists.setdefault(r.cluster_id, {"bridge_paper": [], "bridge_paper_gem": []})[r.signal_type].append({
             "rank": int(r.rank), "paper_id": r.subj["paper_id"], "title": r.subj.get("title") or r.subj["paper_id"],
             "from": all_labs.get(r.subj.get("from_cluster"), ""), "cites": f.get("citations_so_far"),
             "score": round(float(r.score), 2), "coupling": f.get("coupling"), "problem_sim": f.get("problem_sim"),
             "limitation_sim": f.get("limitation_sim"), "best_matching_limitation": f.get("best_matching_limitation"),
+            "year": w.get("year"), "timing": w.get("timing"), "last_cited": w.get("last_cited"), "line": w.get("line"),
             "status": f.get("status"), "age": f.get("age"), "closeness": f.get("closeness")})
-    return {"clusters": clusters, "lists": lists}
+    return {"clusters": clusters, "as_of": T, "lists": lists}
 
 
 @router.get("/p/{p}/facet-text")

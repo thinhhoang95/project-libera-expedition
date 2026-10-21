@@ -2,9 +2,11 @@ import { useMemo, useState } from "react";
 import { qs, useApi } from "../api";
 import { DataTable } from "../components/DataTable";
 import { PaperCard, PaperLink, ReviewBar } from "../components/PaperDrawer";
-import { ACCENT, Plot } from "../components/Plot";
+import { ACCENT, HEAT, Plot } from "../components/Plot";
 import { HowToRead, Note, Pill, Seg, Spinner, pct, signedPct } from "../components/ui";
 import { CatLink } from "../components/Facets";
+import { PaperList, by, usePaperMeta, useSortedList } from "../components/Sort";
+import { FadePill, FlowState, LineTrend, StatusPill, TIMING_HOW, TimingPill, yearSpan } from "../components/Timing";
 import { useCategorySheet, usePaperDrawer } from "../context";
 import type { MapData } from "./MapGrid";
 
@@ -29,7 +31,7 @@ export function GridPanel({ p, alpha, t1, t2, sel, haveSignals }: { p: string; a
     });
     const z = rows.map((r) => cols.map((c) => cell.get(`${r}|${c}`)?.n ?? 0));
     const data: any[] = [{ type: "heatmap", z: z.map((r) => r.map((v) => Math.log10(1 + v))), customdata: z, x: cols.map((c) => lab.get(c)), y: rows.map((r) => lab.get(r)),
-      colorscale: [[0, "#f3f6fb"], [0.15, "#cfe0f7"], [1, "#0359ad"]], showscale: false, hovertemplate: "%{y} × %{x}<br>%{customdata:.0f} papers in window<extra></extra>", xgap: 1, ygap: 1 }];
+      colorscale: HEAT, showscale: false, hovertemplate: "%{y} × %{x}<br>%{customdata:.0f} papers in window<extra></extra>", xgap: 1, ygap: 1 }];
     const newC = [...cell.entries()].filter(([k, v]) => { const [r, c] = k.split("|"); return v.first >= Math.max(t1, t2 - 1) && v.first <= t2 && rows.includes(r) && cols.includes(c); });
     if (newC.length) data.push({ type: "scatter", mode: "markers", x: newC.map(([k]) => lab.get(k.split("|")[1])), y: newC.map(([k]) => lab.get(k.split("|")[0])),
       marker: { symbol: "square-open", size: 13, color: ACCENT, line: { width: 2 } }, text: newC.map(([, v]) => String(v.first)), hovertemplate: "new combination (first year %{text})<extra></extra>" });
@@ -65,6 +67,7 @@ export function DetailPanel({ p, m, sel, setSel, res, alpha, t1, t2, nWin, statu
   const c = m.clusters.find((x) => x.cluster_id === sel);
   const { open: openPaper } = usePaperDrawer();
   const { data: central } = useApi<any[]>(sel ? `/p/${p}/cluster/${encodeURIComponent(sel)}/papers` + qs({ res, alpha }) : null);
+  const centralMeta = usePaperMeta((central ?? []).map((r: any) => r.paper_id));
   const s = sel ? scores.get(sel) : undefined;
   return (
     <div className="flex flex-col gap-3">
@@ -89,7 +92,8 @@ export function DetailPanel({ p, m, sel, setSel, res, alpha, t1, t2, nWin, statu
           )}
           <div className="h-title mt-3 mb-1.5 text-[13px]">Central papers (evidence)</div>
           <DataTable rows={central ?? []} dense rowKey={(r) => r.paper_id} onSelect={(r) => setSelPaper(r.paper_id)} selected={(r) => r.paper_id === selPaper}
-            cols={[{ key: "year", label: "Year", width: 50 }, { key: "title", label: "Title" }, { key: "sim", label: "Sim", align: "right" }]} />
+            cols={[{ key: "year", label: "Year", width: 50 }, { key: "title", label: "Title" }, { key: "sim", label: "Sim", align: "right", title: "Closeness to the cluster's centre" },
+              { key: "here", label: "Cited here", align: "right", value: (r) => centralMeta[r.paper_id]?.cites_here, render: (r) => centralMeta[r.paper_id]?.cites_here ?? "—" }]} />
         </div>
       )}
       {selPaper && (
@@ -147,6 +151,30 @@ export function RankingPanel({ p, m, derived, t1, t2, onSelect }: { p: string; m
 
 // ------------------------------------------------------------------ bridges
 
+/** Limitation → innovation evidence pairs, re-sortable by either side's year or by how close they are. */
+function EvidencePairs({ pairs }: { pairs: any[] }) {
+  const { sorted, bar } = useSortedList(pairs.map((pr, i) => ({ ...pr, _i: i + 1 })), [
+    by.rank<any>((r) => r._i, "As matched"),
+    { ...by.year<any>((r) => r.limitation.year), key: "ly", label: "Limitation year" },
+    { ...by.year<any>((r) => r.innovation.year), key: "iy", label: "Innovation year" },
+    by.count<any>("sim", "Closeness", (r) => r.sim),
+  ], "lim-pairs");
+  return (
+    <div className="mt-2">
+      <div className="mb-1.5 flex justify-end">{bar}</div>
+      <ul className="flex flex-col gap-2">
+        {sorted.map((pr: any) => (
+          <li key={pr._i} className="rounded-lg bg-[var(--surface-2)] px-3 py-2">
+            <div><b>Limitation</b> ({pr.limitation.year}, <PaperLink pid={pr.limitation.paper_id} title={(pr.limitation.title ?? "").slice(0, 80)} className="italic" />): {pr.limitation.text}</div>
+            <div className="mt-1"><b>Innovation</b> ({pr.innovation.year}, <PaperLink pid={pr.innovation.paper_id} title={(pr.innovation.title ?? "").slice(0, 80)} className="italic" />): {pr.innovation.text}</div>
+            <div className="faint mt-1 text-[11.5px]">cosine {pr.sim}</div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function ClusterPairs({ p }: { p: string }) {
   const { data } = useApi<{ types: Record<string, string>; lists: Record<string, any[]> }>(`/p/${p}/bridges`);
   const [typ, setTyp] = useState("bridge_lim_inn");
@@ -160,26 +188,29 @@ function ClusterPairs({ p }: { p: string }) {
       <DataTable rows={list} dense maxHeight={280} rowKey={(r) => r.rank} onSelect={(r) => setRank(r.rank)} selected={(r) => r.rank === rank}
         empty="No candidates of this type for this run." cols={[
           { key: "rank", label: "#", width: 36 }, { key: "candidate", label: "Candidate" },
+          ...(typ === "bridge_lim_inn" ? [
+            { key: "timing", label: "Evidence years", render: (r: any) => (
+              <span className="flex flex-col items-start gap-0.5 text-[11.5px]"><TimingPill t={r.timing} />
+                <span className="faint">lim. {yearSpan(r.lim_years ?? [])} · inn. {yearSpan(r.inn_years ?? [])}</span></span>
+            ) },
+            { key: "flow", label: "A cites B", value: (r: any) => r.flow?.recent, render: (r: any) => <FlowState f={r.flow} /> },
+            { key: "status", label: "Status", render: (r: any) => <StatusPill s={r.status} /> },
+          ] : [
+            { key: "trend", label: typ === "bridge_method_transfer" ? "Method's line" : "Line", sortable: false, render: (r: any) => <LineTrend line={r.line} compact /> },
+          ]),
           { key: "judge", label: "Judge 1–5", align: "right" }, { key: "score", label: "Score", align: "right" },
         ]} />
-      {rank == null && <Note>Ranked by the LLM judge (top 50 judged), then by score. Select a candidate for its evidence.</Note>}
+      {rank == null && <Note>Ranked by the LLM judge (top 50 judged), then by score. Select a candidate for its evidence. Timing columns are context, not part of the ranking.</Note>}
+      <HowToRead title="How to read the timing">{TIMING_HOW}</HowToRead>
       {det && (
         <div className="rounded-lg border border-[var(--line)] p-3 text-[13px]">
           <div className="h-title">#{det.rank} {det.title}</div>
           {det.rationale && <p className="mt-1">Judge {det.judge}/5: {det.rationale}</p>}
           {det.obvious_reason && <p className="muted mt-1 text-[12.5px]">Obvious reason it hasn't been done: {det.obvious_reason}</p>}
           {det.pairs ? (
-            <ul className="mt-2 flex flex-col gap-2">
-              {det.pairs.map((pr: any, i: number) => (
-                <li key={i} className="rounded-lg bg-[var(--surface-2)] px-3 py-2">
-                  <div><b>Limitation</b> ({pr.limitation.year}, <PaperLink pid={pr.limitation.paper_id} title={(pr.limitation.title ?? "").slice(0, 80)} className="italic" />): {pr.limitation.text}</div>
-                  <div className="mt-1"><b>Innovation</b> ({pr.innovation.year}, <PaperLink pid={pr.innovation.paper_id} title={(pr.innovation.title ?? "").slice(0, 80)} className="italic" />): {pr.innovation.text}</div>
-                  <div className="faint mt-1 text-[11.5px]">cosine {pr.sim}</div>
-                </li>
-              ))}
-            </ul>
+            <EvidencePairs pairs={det.pairs} />
           ) : (
-            <ul className="mt-2 flex flex-col gap-1">{det.evidence.map((e: any) => <li key={e.paper_id}><span className="faint mr-2">{e.year}</span><PaperLink pid={e.paper_id} title={e.title ?? e.paper_id} /></li>)}</ul>
+            <PaperList rows={det.evidence} id="bridge-evidence" orderLabel="As the signal lists them" className="mt-2" dense />
           )}
           {typ === "bridge_lim_inn" && <Note>Citations A→B: {det.features.flow_xy ?? "—"} (max from A to any cluster: {det.features.flow_max ?? "—"}).</Note>}
           <ReviewBar view="bridges" subject={{ signal_type: typ, subject: det.subject, rank: det.rank }} actions={["worth pursuing", "obvious", "wrong"]} alpha={{ problem: 0.5, method: 0.5 }} />
@@ -202,16 +233,25 @@ function PaperBridges({ p, sel }: { p: string; sel: string | null }) {
   const label = data.clusters.find((c) => c.cluster_id === cluster)?.label;
   return (
     <div className="flex flex-col gap-3">
-      <HowToRead>{"Pick a problem cluster. Each row is an **innovation paper from another cluster that no paper here cites yet**, ranked by how likely this cluster is to start citing it in the next three years.\n\n- **Likely to be brought in**: the top 10. About 1 in 4 is picked up within three years in the backtest (popularity alone: about 1 in 5).\n- **Hidden gems**: papers cited at most once so far. Fewer are picked up, but popularity can't find them at all.\n- **from** is the paper's own cluster, **cites** its corpus citations so far, and **score** the model's log-odds. Compare scores within one list only.\n- **Select a row** to see the innovation next to this cluster's closest stated limitation. Mark *wrong* if they don't connect, and *obvious* if everyone in the field already knows it.\n\nThe ranking mostly reflects shared references with the cluster. The limitation match explains a pick; it is not what drives the ranking."}</HowToRead>
+      <HowToRead>{"Pick a problem cluster. Each row is an **innovation paper from another cluster that no paper here cites yet**, ranked by how likely this cluster is to start citing it in the next three years.\n\n- **Likely to be brought in**: the top 10. About 1 in 4 is picked up within three years in the backtest (popularity alone: about 1 in 5).\n- **Hidden gems**: papers cited at most once so far. Fewer are picked up, but popularity can't find them at all. They have their own ranking, which adds whether this cluster is already converging on the paper's idea (experiment 30).\n- **Status**: *being taken* = this cluster's recent papers already say what the paper says, without citing it (cited about 7× as often later); *open* = no such sign. *uncited N y* (or *1 cite in N y*) = cited at most once 3+ years on, picked up about half as often as the score suggests (experiment 29).\n- **from** is the paper's own cluster, **cites** its corpus citations so far, and **score** the model's log-odds. Compare scores within one list only.\n- **Select a row** to see the innovation next to this cluster's closest stated limitation. Mark *wrong* if they don't connect, and *obvious* if everyone in the field already knows it.\n\nThe ranking mostly reflects shared references with the cluster. The limitation match explains a pick; it is not what drives the ranking."}</HowToRead>
       <select className="select" value={cluster ?? ""} onChange={(e) => { setPick(e.target.value); setChosen(null); }}>
         {data.clusters.map((c) => <option key={c.cluster_id} value={c.cluster_id}>{c.label}{c.kind === "hub" ? " ◇hub" : ""} ({c.size})</option>)}
       </select>
-      {([["bridge_paper", "Likely to be brought in", "backtest p@10 0.23 vs popularity 0.19"], ["bridge_paper_gem", "Hidden gems (cited ≤ 1×)", "long-tail AUC 0.84 vs popularity 0.55"]] as const).map(([k, title, help]) =>
+      {([["bridge_paper", "Likely to be brought in", "backtest p@10 0.23 vs popularity 0.19"], ["bridge_paper_gem", "Hidden gems (cited ≤ 1×)", "backtest p@500 0.14 with the status vs 0.10 without; popularity at chance"]] as const).map(([k, title, help]) =>
         lists[k]?.length ? (
           <div key={k}>
             <div className="h-title mb-1.5 text-[13px]" title={help}>{title} <span className="faint font-normal">· {help}</span></div>
             <DataTable rows={lists[k]} dense rowKey={(r) => r.paper_id} onSelect={setChosen} selected={(r) => r === chosen} cols={[
-              { key: "rank", label: "#", width: 32 }, { key: "title", label: "Paper" }, { key: "from", label: "From" },
+              { key: "rank", label: "#", width: 32 }, { key: "title", label: "Paper" },
+              { key: "year", label: "Year", align: "right" },
+              { key: "status", label: "Status", render: (r: any) => (
+                <span className="flex flex-col items-start gap-0.5"><StatusPill s={r.status} /><FadePill age={r.age} cites={r.cites} /></span>
+              ) },
+              { key: "timing", label: "Timing", render: (r: any) => (
+                <span className="flex flex-col items-start gap-0.5"><TimingPill t={r.timing} />
+                  <span className="faint text-[11px]">{r.last_cited ? `last cited ${r.last_cited}` : "never cited here"}</span></span>
+              ) },
+              { key: "from", label: "From" },
               { key: "cites", label: "Cites", align: "right" }, { key: "score", label: "Score", align: "right" },
             ]} />
           </div>
@@ -271,7 +311,7 @@ function ExternalImports({ p }: { p: string }) {
           {det.citing_recent?.length > 0 && (
             <>
               <div className="h-title mt-2 mb-1 text-[12.5px]">Corpus papers citing it since {det.work.as_of - 2} ({det.citing_recent.length})</div>
-              <ul className="scroll-thin max-h-40 overflow-y-auto">{det.citing_recent.map((e: any) => <li key={e.paper_id} className="py-0.5"><span className="faint mr-2">{e.year}</span><PaperLink pid={e.paper_id} title={e.title} /></li>)}</ul>
+              <div className="scroll-thin max-h-56 overflow-y-auto"><PaperList rows={det.citing_recent} id="import-citers" orderLabel="Newest first" dense /></div>
             </>
           )}
           {det.work.closest_corpus_paper && <p className="mt-2 text-[12.5px]"><span className="muted">Closest paper in the corpus:</span> <PaperLink pid={det.work.closest_corpus_paper} title="open its card" /></p>}

@@ -1,15 +1,16 @@
 import clsx from "clsx";
-import { BookOpen, CalendarRange, Wrench, Compass, DoorOpen, Gem, Globe2, Layers, Library, Network, Sparkles, Telescope, Waves } from "lucide-react";
-import { useState } from "react";
+import { BookOpen, CalendarRange, Wrench, Compass, DoorOpen, Gem, Globe2, Layers, Library, Network, Telescope, Waves } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "../api";
 import { DataTable } from "../components/DataTable";
 import { PageHeader } from "../components/Layout";
-import { PaperLink } from "../components/PaperDrawer";
-import { Plot } from "../components/Plot";
-import { Card, Empty, HowToRead, Md, Note, Pill, Seg, Spinner, StatCard, pct } from "../components/ui";
+import { PaperList } from "../components/Sort";
+import { MUTED, Plot } from "../components/Plot";
+import { Card, Empty, HowToRead, Md, Note, PageSkeleton, Pill, Seg, Spinner, StatCard, pct } from "../components/ui";
 import { useProjectId } from "../context";
 import { CatLink, CategoryTable } from "../components/Facets";
+import { OpportunitiesCard } from "../components/Opportunities";
 import { FACET_META, FACET_ORDER, useCatalogue, type FacetKey } from "../facets";
 import { EntryRoutes, Lasting, ReadThisFirst, SurveyGaps } from "../components/Orientation";
 import { ToolsToLearn } from "../components/Discovery";
@@ -48,9 +49,7 @@ export function SecondWavesTable({ rows }: { rows: any[] }) {
           {r.likely_next.length > 0 && <div><span className="muted">Likely next:</span> {r.likely_next.join(", ")}</div>}
           <div><span className="muted">Backed by:</span> {r.backed_by}</div>
           {r.evidence.length > 0 && (
-            <ul className="mt-2 flex flex-col gap-1">
-              {r.evidence.map((e: any) => <li key={e.paper_id} className="flex gap-2"><span className="faint w-10 shrink-0">{e.year}</span><PaperLink pid={e.paper_id} title={e.title} /></li>)}
-            </ul>
+            <PaperList rows={r.evidence} id="wave-evidence" orderLabel="Newest first" className="mt-2" dense />
           )}
         </div>
       )}
@@ -103,12 +102,62 @@ function FacetsCard({ p, T }: { p: string; T: number }) {
 const SECTIONS: [string, string][] = [["facets", "Facets"], ["borrow", "Borrowing"], ["read", "Read now"], ["paths", "Read this first"],
   ["tools", "Tools"], ["surveys", "Surveys"], ["opps", "Opportunities"], ["waves", "Second waves"], ["trust", "Trust"]];
 
+/** Where you are on the page: the section whose top last passed under the sticky bar. */
+function useScrollSpy(ids: string[], offset = 150) {
+  const [active, setActive] = useState(ids[0]);
+  useEffect(() => {
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      let cur = ids[0];
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el && el.getBoundingClientRect().top <= offset) cur = id;
+      }
+      // at the very bottom the last sections may never reach the bar: pick the last one
+      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) cur = ids.filter((id) => document.getElementById(id)).slice(-1)[0] ?? cur;
+      setActive(cur);
+    };
+    const on = () => { if (!raf) raf = requestAnimationFrame(update); };
+    update();
+    window.addEventListener("scroll", on, { passive: true });
+    window.addEventListener("resize", on);
+    return () => {
+      window.removeEventListener("scroll", on);
+      window.removeEventListener("resize", on);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [ids.join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
+  return active;
+}
+
+function SectionNav() {
+  const active = useScrollSpy(SECTIONS.map(([id]) => id));
+  const bar = useRef<HTMLElement>(null);
+  useEffect(() => {
+    // keep the active chip visible in the bar (only the bar scrolls, never the page)
+    const b = bar.current, c = b?.querySelector<HTMLElement>(`[data-sec="${active}"]`);
+    if (b && c && (c.offsetLeft < b.scrollLeft || c.offsetLeft + c.offsetWidth > b.scrollLeft + b.clientWidth))
+      b.scrollTo({ left: c.offsetLeft - 8, behavior: "smooth" });
+  }, [active]);
+  return (
+    <nav ref={bar} aria-label="Sections" className="scroll-thin sticky top-[60px] z-20 -mx-1 mb-4 flex gap-1 overflow-x-auto bg-[var(--bg)]/90 px-1 py-2 backdrop-blur">
+      {SECTIONS.map(([id, l]) => (
+        <a key={id} href={`#${id}`} data-sec={id} aria-current={id === active ? "location" : undefined}
+          className={clsx("chip shrink-0 ring-1 transition-colors", id === active
+            ? "!bg-[var(--chip)] !text-[var(--chip-text)] ring-brand-300/60"
+            : "!bg-[var(--surface)] !text-[var(--text)] ring-[var(--line)] hover:!text-brand-600")}
+          onClick={(e) => { const el = document.getElementById(id); if (el) { e.preventDefault(); el.scrollIntoView({ behavior: "smooth", block: "start" }); history.replaceState(null, "", `#${id}`); } }}>{l}</a>
+      ))}
+    </nav>
+  );
+}
+
 export function StartHere() {
   const p = useProjectId();
   const { data: d, isLoading } = useApi<any>(`/p/${p}/overview`);
-  const [opp, setOpp] = useState("gems");
   const [wave, setWave] = useState("paper");
-  if (isLoading) return <Spinner />;
+  if (isLoading) return <PageSkeleton />;
   if (!d?.built)
     return (
       <div className="mx-auto max-w-3xl">
@@ -124,12 +173,7 @@ export function StartHere() {
   return (
     <div className="mx-auto max-w-[1500px]">
       <PageHeader title="Start here" sub={<>As of {T} (the latest complete publication year) · built {d.built_at.slice(0, 16).replace("T", " ")}</>} />
-      <nav className="scroll-thin sticky top-[60px] z-20 -mx-1 mb-4 flex gap-1 overflow-x-auto bg-[var(--bg)]/90 px-1 py-2 backdrop-blur">
-        {SECTIONS.map(([id, l]) => (
-          <a key={id} href={`#${id}`} className="chip shrink-0 !bg-[var(--surface)] !text-[var(--text)] ring-1 ring-[var(--line)] hover:!text-brand-600"
-            onClick={(e) => { const el = document.getElementById(id); if (el) { e.preventDefault(); el.scrollIntoView({ behavior: "smooth", block: "start" }); } }}>{l}</a>
-        ))}
-      </nav>
+      <SectionNav />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={<BookOpen className="size-4.5" />} label="Papers in the map" value={m.papers.toLocaleString()} spark={m.papers_by_year.map((r: any) => r.n)} hint="Papers per year (last 15 years)" />
         <StatCard icon={<CalendarRange className="size-4.5" />} tone="green" label="Publication years" value={`${m.year_lo}–${m.year_hi}`} sub={<span className="muted">95% of papers</span>} hint={`The oldest reference is from ${m.year_min}; ${m.year_hi} is a partial year.`} />
@@ -150,7 +194,7 @@ export function StartHere() {
         {d.import_map && (
           <Card title="Where this field borrows from" icon={<Telescope className="size-4.5 text-brand-600" />} className="scroll-mt-28" >
             <Plot height={380} data={[
-              { type: "bar", orientation: "h", y: [...d.import_map.rows].reverse().map((r: any) => r.subfield), x: [...d.import_map.rows].reverse().map((r: any) => r.share_early), name: d.import_map.early_years, marker: { color: "#c9cdd2" } },
+              { type: "bar", orientation: "h", y: [...d.import_map.rows].reverse().map((r: any) => r.subfield), x: [...d.import_map.rows].reverse().map((r: any) => r.share_early), name: d.import_map.early_years, marker: { color: MUTED } },
               { type: "bar", orientation: "h", y: [...d.import_map.rows].reverse().map((r: any) => r.subfield), x: [...d.import_map.rows].reverse().map((r: any) => r.share_recent), name: d.import_map.recent_years, marker: { color: "#1f6ad6" } },
             ]} layout={{ barmode: "group", margin: { l: 10, r: 10, t: 4, b: 40 }, yaxis: { automargin: true }, xaxis: { tickformat: ".0%" }, legend: { orientation: "h", y: -0.12 } }} />
             <Note>Share of the citations to works outside the map, by the cited work's OpenAlex subfield. Experiment 6: the field imports more of what fits where its questions are moving and what trends across science.</Note>
@@ -162,6 +206,7 @@ export function StartHere() {
         <Card title="Being imported now" icon={<Globe2 className="size-4.5 text-orange-600" />}>
           <DataTable rows={d.imported_now ?? []} rowKey={(r) => r.paper_id} cols={[
             { key: "title", label: "Work", render: (r) => <a href={`https://openalex.org/${r.paper_id}`} target="_blank" rel="noreferrer" className="hover:text-brand-600">{r.title}</a> },
+            { key: "year", label: "Year", align: "right" },
             { key: "subfield", label: "Subfield" },
             { key: "recent_citers", label: "Citing here", align: "right" },
             { key: "cluster_label", label: "Closest community", render: (r) => <CatLink cid={r.cluster_id} label={r.cluster_label} /> },
@@ -170,14 +215,7 @@ export function StartHere() {
         </Card>
         <Card title="Read now" icon={<BookOpen className="size-4.5 text-brand-600" />} className="scroll-mt-28">
           <span id="read" className="block scroll-mt-28" />
-          <ol className="flex flex-col">
-            {d.read_now.map((r: any) => (
-              <li key={r.paper_id} className="flex gap-3 border-b border-[var(--line)] py-2 text-[13px] last:border-0">
-                <span className="faint w-5 shrink-0 text-right tabular-nums">{r.rank}</span>
-                <span><PaperLink pid={r.paper_id} title={r.title} /><Lasting v={r.lasting} /></span>
-              </li>
-            ))}
-          </ol>
+          <PaperList rows={d.read_now} id="read-now" orderLabel="Most likely read next" numbered extra={(r: any) => <Lasting v={r.lasting} />} />
           <Note>Recent papers this field is most likely to read and cite next (experiment 2: AUC 0.82). A reading list, not a quality ranking.</Note>
         </Card>
       </div>
@@ -213,37 +251,7 @@ export function StartHere() {
       )}
 
       <span id="opps" className="block scroll-mt-28" />
-      <Card className="mt-5" title="Opportunities to inspect" icon={<Sparkles className="size-4.5 text-brand-600" />}
-        actions={<Seg size="sm" value={opp} onChange={setOpp} options={[
-          { value: "gems", label: "Hidden gems" }, { value: "lim", label: "Limitation → innovation" },
-          { value: "mt", label: "Method transfer" }, { value: "uc", label: "Underconnected" },
-        ]} />}>
-        {opp === "gems" && (<>
-          <DataTable rows={d.opportunities.gems} cols={[
-            { key: "title", label: "Paper", render: (r) => <PaperLink pid={r.paper_id} title={r.title} /> },
-            { key: "community", label: "For community" },
-          ]} />
-          <Note>Papers cited at most once that a community is likely to take up (experiment 1: long-tail AUC 0.84, where popularity is at chance).</Note>
-        </>)}
-        {opp === "lim" && (<>
-          <DataTable rows={d.opportunities.lim_inn} cols={[
-            { key: "from", label: "Limitations in" }, { key: "to", label: "Innovations in" },
-            { key: "judge", label: "Judge", align: "right" }, { key: "why", label: "Why", render: (r) => <span className="muted text-[12px]">{r.why}</span> },
-          ]} />
-          <Note>Communities whose stated limitations match innovations elsewhere, with few citations between them (Phase 8: about 2.4× random). Only a minority of abstracts state limitations: check the evidence in Map & grid › Bridges.</Note>
-        </>)}
-        {opp === "mt" && (<>
-          <DataTable rows={d.opportunities.method_transfer} cols={[{ key: "method", label: "Method" }, { key: "problem", label: "Problem" }, { key: "judge", label: "Judge", align: "right" }]} />
-          <Note>Methods not yet used for a problem, though they are used for similar problems (experiment 4: AUC 0.70–0.80). Shown as diamonds in the grid.</Note>
-        </>)}
-        {opp === "uc" && (d.opportunities.underconnected ? (<>
-          <DataTable rows={d.opportunities.underconnected} cols={[
-            { key: "source_label", label: "From" }, { key: "target_label", label: "To" },
-            { key: "observed", label: "Citations seen", align: "right" }, { key: "expected", label: "Expected", align: "right" },
-          ]} />
-          <Note>Semantically close communities that cite each other less than their size predicts (Phase 8c). Hypotheses to review, not confirmed gaps.</Note>
-        </>) : <div className="muted text-[13px]">Run the research lab to add these.</div>)}
-      </Card>
+      <OpportunitiesCard o={d.opportunities} />
 
       <span id="waves" className="block scroll-mt-28" />
       {d.second_waves.length > 0 && (

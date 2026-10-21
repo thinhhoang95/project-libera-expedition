@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 
 export type Col<T> = {
@@ -12,7 +12,34 @@ export type Col<T> = {
   className?: string;
   sortable?: boolean;
   title?: string;
+  /** Hidden when the table's box is narrower than about 640px (a sparkline, a secondary count). */
+  narrow?: boolean;
+  /** The value written to CSV, when neither `value` nor the row's field is it. */
+  csv?: (row: T) => any;
 };
+
+/** Saves rows as a CSV file. */
+export function downloadCsv(name: string, rows: Record<string, any>[]) {
+  if (!rows.length) return;
+  const cols = Object.keys(rows[0]);
+  const esc = (v: any) => `"${String(Array.isArray(v) ? v.join("; ") : v != null && typeof v === "object" ? JSON.stringify(v) : v ?? "").replace(/"/g, '""')}"`;
+  const blob = new Blob([[cols.join(","), ...rows.map((r) => cols.map((c) => esc(r[c])).join(","))].join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+const plain = (n: ReactNode, fallback: string) => (typeof n === "string" || typeof n === "number" ? String(n) : fallback);
+
+/** The table as shown (its columns, in its current order) for a CSV export. */
+function tableRows<T extends Record<string, any>>(rows: T[], cols: Col<T>[]) {
+  const keep = cols.filter((c) => !["pick", "sel"].includes(c.key) && c.key !== "series");
+  return rows.map((r) => Object.fromEntries(keep.map((c) => [plain(c.label, c.key) || c.key, c.csv ? c.csv(r) : c.value ? c.value(r) : r[c.key]])));
+}
+
+const NARROW = "@max-[640px]:hidden";
 
 export function fmtCell(v: any): ReactNode {
   if (v == null || (typeof v === "number" && Number.isNaN(v))) return <span className="faint">—</span>;
@@ -25,10 +52,10 @@ export function fmtCell(v: any): ReactNode {
 
 /** Sortable table with optional row selection; columns default to the row's keys. */
 export function DataTable<T extends Record<string, any>>({ rows, cols, onSelect, selected, maxHeight, rowKey, empty,
-  dense, initialSort, className }: {
+  dense, initialSort, className, exportName }: {
   rows: T[]; cols?: Col<T>[]; onSelect?: (row: T, i: number) => void; selected?: (row: T) => boolean;
   maxHeight?: number; rowKey?: (row: T, i: number) => string | number; empty?: ReactNode; dense?: boolean;
-  initialSort?: { key: string; dir: 1 | -1 }; className?: string;
+  initialSort?: { key: string; dir: 1 | -1 }; className?: string; exportName?: string;
 }) {
   const columns: Col<T>[] = useMemo(
     () => cols ?? (rows[0] ? Object.keys(rows[0]).map((k) => ({ key: k, label: k.replace(/_/g, " ") })) : []),
@@ -49,8 +76,17 @@ export function DataTable<T extends Record<string, any>>({ rows, cols, onSelect,
       });
   }, [rows, sort, columns]);
   if (!rows.length) return <div className="muted py-4 text-[13px]">{empty ?? "Nothing to show."}</div>;
+  const save = () => {
+    const page = window.location.pathname.split("/").filter(Boolean).slice(-1)[0] ?? "table";
+    downloadCsv(exportName ?? `libera-${page}-${new Date().toISOString().slice(0, 10)}.csv`, tableRows(sorted.map(([r]) => r), columns));
+  };
   return (
-    <div className={clsx("scroll-thin overflow-auto rounded-lg border border-[var(--line)]", className)} style={{ maxHeight }}>
+    <div className={clsx("group/table @container relative", className)}>
+    <button onClick={save} title={`Export these ${rows.length} rows as CSV`} aria-label="Export as CSV"
+      className="btn btn-sm btn-icon absolute top-1 right-1 z-[2] !size-6 !rounded-md bg-[var(--surface)] opacity-0 shadow-sm group-hover/table:opacity-100 focus-visible:opacity-100">
+      <Download className="size-3.5" />
+    </button>
+    <div className="scroll-thin overflow-auto rounded-lg border border-[var(--line)]" style={{ maxHeight }}>
       <table className={clsx("table", dense && "[&_td]:py-1.5")}>
         <thead>
           <tr>
@@ -58,8 +94,9 @@ export function DataTable<T extends Record<string, any>>({ rows, cols, onSelect,
               <th
                 key={c.key}
                 style={{ width: c.width, textAlign: c.align }}
-                title={c.title}
-                className={clsx(c.sortable !== false && "cursor-pointer hover:text-[var(--text-strong)]")}
+                title={c.sortable !== false ? `${c.title ? c.title + ". " : ""}Click to sort; again to reverse; a third time for the original order` : c.title}
+                className={clsx(c.sortable !== false && "group/th cursor-pointer hover:text-[var(--text-strong)]", c.narrow && NARROW)}
+                aria-sort={sort?.key === c.key ? (sort.dir === -1 ? "descending" : "ascending") : undefined}
                 onClick={() =>
                   c.sortable !== false &&
                   setSort((s) => (s?.key === c.key ? (s.dir === -1 ? { key: c.key, dir: 1 } : null) : { key: c.key, dir: -1 }))
@@ -67,7 +104,8 @@ export function DataTable<T extends Record<string, any>>({ rows, cols, onSelect,
               >
                 <span className="inline-flex items-center gap-1">
                   {c.label}
-                  {sort?.key === c.key && (sort.dir === -1 ? <ArrowDown className="size-3" /> : <ArrowUp className="size-3" />)}
+                  {sort?.key === c.key ? (sort.dir === -1 ? <ArrowDown className="size-3 text-[var(--chip-text)]" /> : <ArrowUp className="size-3 text-[var(--chip-text)]" />)
+                    : c.sortable !== false && <ArrowUpDown className="size-3 opacity-30 group-hover/th:opacity-80" aria-hidden />}
                 </span>
               </th>
             ))}
@@ -81,7 +119,7 @@ export function DataTable<T extends Record<string, any>>({ rows, cols, onSelect,
               onClick={() => onSelect?.(r, i)}
             >
               {columns.map((c) => (
-                <td key={c.key} style={{ textAlign: c.align }} className={c.className}>
+                <td key={c.key} style={{ textAlign: c.align }} className={clsx(c.className, c.narrow && NARROW)}>
                   {c.render ? c.render(r, i) : fmtCell(r[c.key])}
                 </td>
               ))}
@@ -89,6 +127,7 @@ export function DataTable<T extends Record<string, any>>({ rows, cols, onSelect,
           ))}
         </tbody>
       </table>
+    </div>
     </div>
   );
 }

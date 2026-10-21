@@ -20,6 +20,8 @@ Last updated 2026-10-21. Read this first, then `README.md` and `docs/features/`.
 | 9 Product portfolio: Start here, My paper, `landscape external / portfolio / my-paper` | done | `09-portfolio.md` |
 | 10 Orientation experiments (entry strategies, reading paths, durable ideas) | done; artefacts built by `orientation.py`, rendered by the web app | `10-orientation-experiments.md` |
 | 11 Time experiments (opportunity age, still open; exp29–30) | done; closed pairs dropped, gem model with status, status badges | `12-time-experiments.md` |
+| 11 Web app (projects, job queue, facet categories and details sheets) | done | `11-web-app.md` |
+| 11b Web app usability pass (modals, theme-aware charts, shared window, map labels, notices, CSV) | done | `11b-web-app-ux.md` |
 
 The pilot run is `dro-pilot` (seed: Esfahani & Kuhn, Wasserstein DRO, DOI
 10.1007/s10107-017-1172-1): 5,410 papers, total spend about $1.80 so far (about $1.10 of it the
