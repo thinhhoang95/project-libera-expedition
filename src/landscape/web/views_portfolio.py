@@ -14,6 +14,7 @@ import pandas as pd
 from fastapi import HTTPException
 
 from .. import embed, portfolio
+from . import discovery_views as dv
 from ..research_lab import lab_dir
 from .data import (Router, corpus_vectors, embedding_version, ext_vectors, jl, memo, portfolio_file, q, read_file,
                    records, titles)
@@ -174,6 +175,13 @@ def overview(p: str) -> dict:
     out["entry_routes"] = _entry_routes(p) if portfolio_file(p, "entry_routes.parquet") is not None else None
     out["entry_effects"] = _entry_effects(p)
     out["survey_gaps"] = _survey_gaps(p)
+    # discovery (experiments 17-23): builders of quiet foundations in the reading paths, tools to learn
+    if out["reading_paths"]:
+        b = dv.builders_for(p)
+        for row in out["reading_paths"]:
+            if row["role"] == "quiet foundation":
+                row["builders"] = b.get((row["cluster_id"], row["paper_id"]), [])
+    out["tools"] = dv.tools(p)
     return out
 
 
@@ -322,7 +330,7 @@ def _my_paper(p: str, pid: str, source: str) -> dict:
                 if x in pos and x not in best:
                     best[x] = float(v[pos[x]] @ q256)
         o = L[L.outside_field].assign(fit=L.paper_id.map(best)).dropna(subset=["fit"])
-        o = o[~o.paper_id.isin(refs)].sort_values("fit", ascending=False).head(6)
+        o = o[~o.paper_id.isin(refs | {rec["paper_id"]})].sort_values("fit", ascending=False).head(6)
         outside = records(o.assign(fit=o.fit.round(3))[["paper_id", "title", "subfield", "fit", "recent_citers", "year"]])
     out["outside"] = outside
 
@@ -419,6 +427,17 @@ def _my_paper(p: str, pid: str, source: str) -> dict:
     out["entry_routes"] = _entry_routes(p, hc + [c for c in top3 if c not in hc])
     out["entry_effects"] = _entry_effects(p)
     out["survey_gaps"] = _survey_gaps(p, hc + [c for c in top3 if c not in hc])
+    # discovery (experiments 17-23)
+    if out["reading_path"]:
+        b = dv.builders_for(p)
+        for row in out["reading_path"]:
+            if row["role"] == "quiet foundation":
+                row["builders"] = b.get((row["cluster_id"], row["paper_id"]), [])
+    skip = refs | {rec["paper_id"]}
+    out["quiet_foundations"] = dv.quiet_foundations(p, hc[0], skip) if hc else None
+    out["tools"] = dv.tools(p, hc[:1]) if hc else None
+    out["untried"] = dv.untried(p, hc[0], prob) if hc else None
+    out["crowding"] = dv.crowding(p, rec, source)
     return out
 
 

@@ -1,6 +1,7 @@
 import { Hourglass } from "lucide-react";
 import { useState } from "react";
 import { DataTable } from "./DataTable";
+import { Builders, quietRoleLabel, roleTone } from "./Discovery";
 import { PaperLink } from "./PaperDrawer";
 import { HowToRead, Note, Pill, pct } from "./ui";
 
@@ -21,7 +22,8 @@ const LASTING_HOW =
   "faster, and early citations say nothing). Papers before 2018 are *not assessed*: there is no window to check them.";
 
 export type ReadingRow = { cluster_id: string; label: string; rank: number; paper_id: string; title: string; year: number | null;
-  role: string; cited_by_community: number; source_of_methods: number; lasting: boolean; lasting_assessed: boolean };
+  role: string; cited_by_community: number; source_of_methods: number; lasting: boolean; lasting_assessed: boolean;
+  builders?: { paper_id: string; title: string; year?: number | null }[] };
 
 export function ReadingPath({ rows, limit }: { rows: ReadingRow[]; limit?: number }) {
   return (
@@ -35,14 +37,15 @@ export function ReadingPath({ rows, limit }: { rows: ReadingRow[]; limit?: numbe
               <span className="faint ml-1.5 text-[11.5px]">{r.year}</span>
               <Lasting v={r.lasting_assessed ? r.lasting : null} />
               <span className="muted block text-[11.5px]">
-                <Pill tone={r.role === "classic" ? "brand" : "violet"}>{r.role}</Pill>
+                <Pill tone={roleTone(r.role)}>{quietRoleLabel(r.role)}</Pill>
                 <span className="ml-2">cited by {r.cited_by_community} here{r.source_of_methods ? ` · source of ${r.source_of_methods} recent methods` : ""}</span>
               </span>
+              {r.role === "quiet foundation" && <Builders rows={r.builders} />}
             </span>
           </li>
         ))}
       </ol>
-      <HowToRead>{"Classics (most cited by the community) alternate with the **sources of its current methods** (the earliest close sources of what it used in the last three years). Experiment 13: newcomers mostly cite the classics but build on the method sources; alternating covers most of both.\n\n" + LASTING_HOW}</HowToRead>
+      <HowToRead>{"Classics (most cited by the community) alternate with the **sources of its current methods** (the earliest close sources of what it used in the last three years). Experiment 13: newcomers mostly cite the classics but build on the method sources; alternating covers most of both.\n\n**Built on, rarely cited** marks quiet foundations: papers later work here builds on far more often than it cites (experiment 17: this persists, AUC 0.83, where citations are at chance).\n\n" + LASTING_HOW}</HowToRead>
     </>
   );
 }

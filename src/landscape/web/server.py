@@ -348,3 +348,31 @@ def events(since: int = 0, project: str | None = None) -> dict:
 def events_seen() -> dict:
     jobs.connect().execute("UPDATE events SET seen = 1 WHERE seen = 0")
     return {"ok": True}
+
+
+@router.get("/p/{p}/snapshots")
+def snapshots(p: str) -> list[dict]:
+    """Frozen prospective snapshots (docs/snapshots/<project>-<date>.json): lists, scoring date, file integrity."""
+    import hashlib
+    from datetime import date
+
+    out = []
+    for man in sorted((ROOT / "docs" / "snapshots").glob(f"{p}-*.json")):
+        if man.name.startswith("._"):
+            continue
+        m = json.loads(man.read_text())
+        d = project_dir(p, "snapshots", m["snapshot_date"], mkdir=False)
+        bad = [f for f, h in m.get("sha256", {}).items()
+               if not (d / f).exists() or hashlib.sha256((d / f).read_bytes()).hexdigest() != h]
+        y, mo, dd = map(int, m["snapshot_date"].split("-"))
+        horizons = []
+        for months in m.get("protocol", {}).get("horizons_months") or [12]:
+            due = date(y + (mo - 1 + months) // 12, (mo - 1 + months) % 12 + 1, min(dd, 28))
+            horizons.append({"months": months, "due": due.isoformat(), "due_now": date.today() >= due,
+                             "command": f"uv run landscape score-snapshot --run-id {p} --date {m['snapshot_date']} --months {months}"})
+        scored = sorted(d.glob("score_*.json")) if d.exists() else []
+        out.append({"date": m["snapshot_date"], "created_at": m.get("created_at"), "git_commit": (m.get("git_commit") or "")[:9],
+                    "lists": len(m.get("lists", [])), "files": len(m.get("sha256", {})), "integrity": "ok" if not bad else "mismatch",
+                    "mismatched": bad, "corpus_papers": m.get("corpus_papers"), "horizons": horizons,
+                    "scored": [f.stem for f in scored if not f.name.startswith("._")]})
+    return out

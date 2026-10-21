@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
-  ArrowRight, BookOpen, Calendar, DoorOpen, Library, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, Flame, HelpCircle,
+  ArrowRight, BookOpen, Calendar, DoorOpen, Gauge, Landmark, Library, MapPinned, Wrench, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, Flame, HelpCircle,
   Lightbulb, Link2, Loader2, Network, Quote, Search, Tag, Target, Users, Waves,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -12,6 +12,7 @@ import { PaperLink, ReviewBar } from "../components/PaperDrawer";
 import { Card, ErrorBox, HowToRead, Note, Pill, Spinner, StatCard } from "../components/ui";
 import { SecondWavesTable, SECOND_WAVES_HOW } from "./StartHere";
 import { EntryRoutes, Lasting, ReadingPath, SurveyGaps } from "../components/Orientation";
+import { CrowdingGauge, QuietFoundations, ToolsToLearn, UntriedApplications } from "../components/Discovery";
 
 type Warm = { rank: number; cluster_id: string; community: string; kind: string; warmth: number; content_fit: number; why: string[] };
 type MP = {
@@ -36,6 +37,10 @@ type MP = {
   reading_path: any[] | null;
   entry_routes: any[];
   survey_gaps: any[] | null;
+  quiet_foundations: any | null;
+  tools: any | null;
+  untried: any | null;
+  crowding: any | null;
   entry_effects: any;
 };
 
@@ -396,6 +401,18 @@ function PaperView({ pid }: { pid: string }) {
             <Limitations d={d} />
             <Outside d={d} />
           </div>
+          {d.crowding && (
+            <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_1fr]">
+              <Card title="How busy is this question?" icon={<Gauge className="size-4.5 text-brand-600" />}>
+                <CrowdingGauge c={d.crowding} />
+              </Card>
+              {d.quiet_foundations && d.home && (
+                <Card title="Quiet foundations of your home community" icon={<Landmark className="size-4.5 text-amber-600" />} subtitle={`${d.home.label} · built on, rarely cited · papers you cite are left out`}>
+                  <QuietFoundations data={{ ...d.quiet_foundations, rows: d.quiet_foundations.rows.slice(0, 5) }} />
+                </Card>
+              )}
+            </div>
+          )}
           <ReviewBar view="my_paper" subject={{ paper_id: pid, warm_top3: d.top3 }} actions={["useful", "obvious", "wrong"]} alpha={{ problem: 0.5 }} label="Were these suggestions useful?" />
         </>
       )}
@@ -442,6 +459,11 @@ function PaperView({ pid }: { pid: string }) {
             <Note>Recent papers this field is likely to read next (experiment 2), closest to yours.</Note>
           </Card>
           <Limitations d={d} />
+          {d.quiet_foundations && d.home && (
+            <Card title="Quiet foundations" icon={<Landmark className="size-4.5 text-amber-600" />} subtitle={`${d.home.label} · papers you cite are left out`}>
+              <QuietFoundations data={d.quiet_foundations} />
+            </Card>
+          )}
           {d.reading_path && d.home && (
             <Card title="Read this first in your home community" icon={<Library className="size-4.5 text-brand-600" />} subtitle={`${d.home.label} · papers you already cite are left out`}>
               <ReadingPath rows={d.reading_path} />
@@ -453,6 +475,16 @@ function PaperView({ pid }: { pid: string }) {
       {tab === "Ideas & insights" && (
         <div className="mt-5 grid gap-5 xl:grid-cols-2">
           <Outside d={d} />
+          {d.tools?.rows?.length > 0 && (
+            <Card title="Tools to learn in your home community" icon={<Wrench className="size-4.5 text-emerald-600" />} subtitle={d.home?.label}>
+              <ToolsToLearn data={d.tools} picker={false} />
+            </Card>
+          )}
+          {d.untried && (
+            <Card title="Untried applications" icon={<MapPinned className="size-4.5 text-violet-600" />} subtitle={d.home ? `Domains ${d.home.label} has not used yet` : undefined}>
+              <UntriedApplications data={d.untried} />
+            </Card>
+          )}
           <Card title="Methods new to your problem" icon={<Lightbulb className="size-4.5 text-brand-600" />}>
             <DataTable rows={d.methods} cols={[{ key: "method", label: "Method community" }, { key: "judge", label: "Judge 1–5", align: "right" }]}
               empty="No home community, or no transfer candidates for it." />

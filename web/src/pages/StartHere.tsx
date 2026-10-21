@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { BookOpen, CalendarRange, Compass, DoorOpen, Gem, Globe2, Layers, Library, Network, Sparkles, Telescope, Waves } from "lucide-react";
+import { BookOpen, CalendarRange, Wrench, Compass, DoorOpen, Gem, Globe2, Layers, Library, Network, Sparkles, Telescope, Waves } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "../api";
@@ -10,6 +10,7 @@ import { Plot } from "../components/Plot";
 import { Card, Empty, HowToRead, Md, Note, Pill, Seg, Sparkline, Spinner, StatCard, pct, signedPct } from "../components/ui";
 import { useProjectId } from "../context";
 import { EntryRoutes, Lasting, ReadThisFirst, SurveyGaps } from "../components/Orientation";
+import { ToolsToLearn } from "../components/Discovery";
 
 export const SECOND_WAVES_HOW =
   "Established ideas reaching **new audiences**: communities that began citing (or, for methods, using) them in the " +
@@ -163,6 +164,12 @@ export function StartHere() {
             </Card>
           )}
         </div>
+      )}
+
+      {d.tools?.rows?.length > 0 && (
+        <Card className="mt-5" title="Tools to learn" icon={<Wrench className="size-4.5 text-emerald-600" />} subtitle="Per community: settled methods first, then the ones still changing">
+          <ToolsToLearn data={d.tools} />
+        </Card>
       )}
 
       {d.survey_gaps && d.survey_gaps.some((r: any) => r.status === "survey gap" || r.status === "thin") && (

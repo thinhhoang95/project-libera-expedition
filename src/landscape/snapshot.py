@@ -9,7 +9,7 @@
 3. Each list is scored with its pre-registered hit definition, next to its frozen baseline. New papers are
    assigned to the frozen communities (nearest frozen centroid, problem / method at alpha 0.5, medium).
 
-Writes data/snapshots/<run>/<date>/score_<today>_<months>m.json. Lists without an automatic scorer yet are
+Writes data/projects/<run>/snapshots/<date>/score_<today>_<months>m.json. Lists without an automatic scorer yet are
 reported as `manual`.
 """
 

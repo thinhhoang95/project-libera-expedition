@@ -29,7 +29,7 @@ function Brand() {
       <img src="/logo-white.png" alt="" className="hidden size-10 dark:block" />
       <div className="leading-tight">
         <div className="h-title text-[16.5px]">Libera Expedition</div>
-        <div className="muted text-[11.5px]">Research landscape intelligence</div>
+        <div className="muted text-[11.5px]">Research intelligence</div>
       </div>
     </Link>
   );

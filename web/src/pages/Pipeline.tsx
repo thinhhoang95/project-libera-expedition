@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { CheckCircle2, Circle, Play, RefreshCw, Rocket, Sparkles } from "lucide-react";
+import { CheckCircle2, Circle, Lock, Play, RefreshCw, Rocket, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, useApi, type Job, type Project } from "../api";
@@ -47,6 +47,36 @@ export function StepPicker({ catalog, selected, setSelected, built, wide }: {
         );
       })}
     </div>
+  );
+}
+
+function Snapshots({ p }: { p: string }) {
+  const { data } = useApi<any[]>(`/p/${p}/snapshots`);
+  if (!data?.length) return null;
+  return (
+    <Card title="Frozen snapshots" icon={<Lock className="size-4 text-brand-600" />} subtitle="Prospective test: lists frozen on a date, scored later against what happened">
+      {data.map((s) => (
+        <div key={s.date} className="text-[12.5px]">
+          <div className="flex items-center gap-2">
+            <span className="h-title text-[13.5px]">{s.date}</span>
+            <Pill tone={s.integrity === "ok" ? "green" : "red"}>{s.integrity === "ok" ? "files intact" : "hash mismatch"}</Pill>
+          </div>
+          <div className="muted mt-0.5">{s.lists} lists · {s.files} files · {s.corpus_papers?.toLocaleString()} papers · commit {s.git_commit}</div>
+          {s.mismatched.length > 0 && <div className="mt-1 text-red-600">Changed since freezing: {s.mismatched.join(", ")}</div>}
+          <ul className="mt-2 flex flex-col gap-1">
+            {s.horizons.map((h: any) => (
+              <li key={h.months} className="flex items-center gap-2">
+                <span className="w-16">{h.months} months</span>
+                <span className="muted">score on {h.due}</span>
+                {h.due_now ? <Pill tone="amber">due</Pill> : <Pill>not yet</Pill>}
+              </li>
+            ))}
+          </ul>
+          {s.horizons.some((h: any) => h.due_now) && <code className="mt-2 block text-[11.5px]">{s.horizons.find((h: any) => h.due_now).command}</code>}
+          {s.scored.length > 0 && <div className="muted mt-1">Scored: {s.scored.join(", ")}</div>}
+        </div>
+      ))}
+    </Card>
   );
 }
 
@@ -112,6 +142,7 @@ export function Pipeline() {
               </button>
             </Card>
           )}
+          <Snapshots p={p} />
           <Card title="Project">
             <dl className="grid grid-cols-[120px_1fr] gap-y-1.5 text-[12.5px]">
               <dt className="muted">Id</dt><dd><code>{p}</code></dd>
