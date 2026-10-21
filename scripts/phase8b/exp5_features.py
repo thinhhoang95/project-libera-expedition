@@ -77,6 +77,20 @@ def vecs(facet):
 
 V = {f: vecs(f) for f in ("abstract", "problem", "method", "innovation", "limitations")}
 
+# time-sliced global counts (scripts/phase8b/fetch_counts_by_year.py): citations a work received in
+# each year, and citations / new works per author per year. "As of T" = years <= T only.
+wc = pd.read_parquet("data/backtest/oa_work_counts.parquet").pivot_table(
+    index="paper_id", columns="year", values="cites", aggfunc="sum").fillna(0)
+ac = pd.read_parquet("data/backtest/oa_author_counts.parquet")
+ac = ac[(ac.year >= 2010) & (ac.year <= 2026)]
+acc = ac.pivot_table(index="author_id", columns="year", values="cites", aggfunc="sum").fillna(0)
+acw = ac.pivot_table(index="author_id", columns="year", values="works", aggfunc="sum").fillna(0)
+
+
+def wsum(m, ids, y0, y1):
+    cols = [c for c in m.columns if y0 <= c <= y1]
+    return m.reindex(ids)[cols].sum(axis=1).fillna(0) if cols else pd.Series(0.0, index=ids)
+
 
 def mat(facet, ids):
     pos, v = V[facet]
@@ -102,6 +116,12 @@ for T in CUTOFFS:
     early["c"] = early.paper_id.map(cites_T).fillna(0)
     early["pct"] = early.groupby("year").c.rank(pct=True)
     pct = early.set_index("paper_id").pct
+    # the same with global citations received by T, and received in year T alone (current attention)
+    early["g"] = wsum(wc, early.paper_id.tolist(), 0, T).to_numpy()
+    early["gnow"] = wsum(wc, early.paper_id.tolist(), T, T).to_numpy()
+    early["gpct"] = early.groupby("year").g.rank(pct=True)
+    early["gnow_pct"] = early.groupby("year").gnow.rank(pct=True)
+    gpct, gnow_pct = early.set_index("paper_id").gpct, early.set_index("paper_id").gnow_pct
     F = pd.DataFrame({"paper_id": pop, "T": T})
 
     # ---- base
@@ -109,6 +129,7 @@ for T in CUTOFFS:
     C = (R[[pidx[x] for x in pop]] @ R[[pidx[x] for x in pastp]].T).tocsr()
     C.data = (C.data >= 2).astype(float)
     F["cites_so_far"] = [cites_T.get(x, 0) for x in pop]
+    F["g_cites_so_far"] = wsum(wc, pop, 0, T).to_numpy()
     F["coupling"] = np.maximum(np.asarray(C.sum(axis=1)).ravel() - 1, 0)
     F["n_refs"] = [nrefs[pidx[x]] for x in pop]
     F["n_authors"] = [n_auth.get(x, 0) for x in pop]
@@ -125,6 +146,8 @@ for T in CUTOFFS:
         top = np.argsort(-S, axis=1)[:, :K]
         npct = np.array([pct.get(x, np.nan) for x in nid])
         F[f"{tag}_heat"] = np.nanmean(npct[top], axis=1)
+        F[f"{tag}_gheat"] = np.nanmean(np.array([gpct.get(x, np.nan) for x in nid])[top], axis=1)
+        F[f"{tag}_gnow"] = np.nanmean(np.array([gnow_pct.get(x, np.nan) for x in nid])[top], axis=1)
         w = np.take_along_axis(S, top, axis=1)
         F[f"{tag}_heat_w"] = np.nansum(npct[top] * w, axis=1) / w.sum(axis=1)
         F[f"{tag}_typicality"] = w.mean(axis=1)
@@ -210,10 +233,25 @@ for T in CUTOFFS:
     F["a_track"], F["a_expert"], F["a_cred_expert"] = tr, ex, ce
     F["a_n_prior"], F["a_n_with_history"] = npr, nhist
 
+    # ---- global author credibility as of T (OpenAlex yearly counts, all of the author's work)
+    A = au[au.paper_id.isin(pop)][["paper_id", "author_id"]].drop_duplicates()
+    aid = A.author_id.unique().tolist()
+    c_cum, c_rec = wsum(acc, aid, 0, T), wsum(acc, aid, T - 2, T)
+    w_cum = wsum(acw, aid, 0, T)
+    A["c_cum"], A["c_rec"], A["w_cum"] = A.author_id.map(c_cum), A.author_id.map(c_rec), A.author_id.map(w_cum)
+    A["rate"] = np.where(A.w_cum >= 3, A.c_cum / A.w_cum.clip(lower=1), np.nan)
+    ga = A.groupby("paper_id").agg(c_cum=("c_cum", "max"), c_rec=("c_rec", "max"), w_cum=("w_cum", "max"),
+                                   rate=("rate", "max"), team=("c_cum", lambda v: np.log1p(v).sum()))
+    for c in ("c_cum", "c_rec", "w_cum", "rate", "team"):
+        F["ga_" + c] = F.paper_id.map(ga[c]).to_numpy()
+
     # ---- venue credibility (shrunk to 0.5 with 5 pseudo-papers)
     vg = early.dropna(subset=["venue_id"]).groupby("venue_id").pct.agg(["sum", "count"])
     vp = (vg["sum"] + 2.5) / (vg["count"] + 5)
     F["v_prestige"] = [vp.get(meta.venue_id[x], 0.5) if isinstance(meta.venue_id[x], str) else 0.5 for x in pop]
+    vgg = early.dropna(subset=["venue_id"]).groupby("venue_id").gpct.agg(["sum", "count"])
+    vpg = (vgg["sum"] + 2.5) / (vgg["count"] + 5)
+    F["v_gprestige"] = [vpg.get(meta.venue_id[x], 0.5) if isinstance(meta.venue_id[x], str) else 0.5 for x in pop]
     F["v_n_prior"] = [vg["count"].get(meta.venue_id[x], 0) if isinstance(meta.venue_id[x], str) else 0 for x in pop]
 
     # ---- imports from outside the corpus: external works (not in the corpus) that corpus papers cite.
@@ -237,6 +275,7 @@ for T in CUTOFFS:
     F["fut_corpus"] = [fut.get(x, 0) for x in pop]
     F["fut_corpus_ns"] = [fut_ns.get(x, 0) for x in pop]
     F["gcites"] = [meta.gcites[x] for x in pop]
+    F["g3"] = wsum(wc, pop, T + 1, T + 3).to_numpy()  # global citations received in T+1..T+3
     rows.append(F)
     print(T, len(F), flush=True)
 
@@ -250,10 +289,12 @@ n_sf = df.groupby(["T", "subfield"]).paper_id.transform("size")
 df["field_group"] = np.where(n_sf >= 15, df.subfield, df.paper_id.map(sub.fd).fillna("?"))
 lg = np.log1p(df.gcites.astype(float))
 df["g_field_rel"] = lg - lg.groupby([df["T"], df.field_group]).transform("median")
+l3 = np.log1p(df.g3.astype(float))
+df["g3_field_rel"] = l3 - l3.groupby([df["T"], df.field_group]).transform("median")
 # peers: the 15 nearest same-year papers (abstract vectors, whole corpus, any route)
 apos, Av = V["abstract"]
 gl = np.log1p(papers.set_index("paper_id").gcites.astype(float))
-rel, crel, crel_ns = [], [], []
+rel, crel, crel_ns, rel3 = [], [], [], []
 fut_all = {}
 for T in CUTOFFS:
     for ns in (False, True):
@@ -267,6 +308,8 @@ for T, g in df.groupby("T"):
     top = np.argsort(-S, axis=1)[:, :15]
     peer = gl.reindex(same).to_numpy()[top].mean(axis=1)
     rel.append(pd.Series(lg[g.index].to_numpy() - peer, index=g.index))
+    g3s = np.log1p(wsum(wc, same, T + 1, T + 3).to_numpy())
+    rel3.append(pd.Series(l3[g.index].to_numpy() - g3s[top].mean(axis=1), index=g.index))
     for ns, lst in ((False, crel), (True, crel_ns)):
         fa = fut_all[T, ns][[fpos[x] for x in same]]
         own = g.fut_corpus_ns if ns else g.fut_corpus
@@ -274,8 +317,10 @@ for T, g in df.groupby("T"):
 df["g_peer_rel"] = pd.concat(rel)
 df["c_peer_rel"] = pd.concat(crel)  # in-field citations relative to same-year semantic peers
 df["c_peer_rel_ns"] = pd.concat(crel_ns)  # the same without self-citations
+df["g3_peer_rel"] = pd.concat(rel3)
 for c, y in (("g_field_rel", "y_field"), ("g_peer_rel", "y_peer"), ("c_peer_rel", "y_corpus_peer"),
-             ("c_peer_rel_ns", "y_corpus_peer_ns")):
+             ("c_peer_rel_ns", "y_corpus_peer_ns"), ("g3", "y_g3"), ("g3_field_rel", "y_g3_field"),
+             ("g3_peer_rel", "y_g3_peer")):
     df[y] = df[c] > df.groupby("T")[c].transform(lambda s: s.quantile(0.75))
 df["y_corpus"] = df.fut_corpus > df.groupby("T").fut_corpus.transform(lambda s: s.quantile(0.75))
 df["y_global"] = df.gcites > df.groupby("T").gcites.transform(lambda s: s.quantile(0.75))

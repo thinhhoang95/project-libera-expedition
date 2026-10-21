@@ -19,6 +19,9 @@ uv run python scripts/phase8b/exp2_early_work.py      # writes data/backtest/exp
 uv run python scripts/phase8b/exp3_micro_topics.py
 uv run python scripts/phase8b/exp4_method_transfer.py
 uv run python scripts/phase8b/fit_models.py           # refits the two production models on all cutoffs
+uv run python scripts/phase8b/fetch_counts_by_year.py # exp5 only: OpenAlex yearly counts (~$0.02, cached)
+uv run python scripts/phase8b/exp5_features.py        # writes data/backtest/exp5_papers.parquet
+uv run python scripts/phase8b/exp5_evaluate.py [logit|hgb] [y_...]
 ```
 
 The production models are fitted on all four cutoffs. The honest accuracy estimates are the
@@ -33,6 +36,7 @@ leave-one-cutoff-out numbers below, not the in-sample fit.
 | 3a. Burstiness micro-topics | AUC 0.46 (mean-reverting) | dropped |
 | 3b. Local momentum pockets | ρ +0.13, AUC 0.58, p@50 0.17 vs 0.084 random | **adopted lightly**: `paper_scores` metric `local_momentum`, explorer layer *Rising pockets* |
 | 4. Method transfer as matrix completion | cluster level, item CF AUC 0.70 (≥ 1 paper) / 0.80 (≥ 2) vs recipe 0.67 / 0.66, popularity 0.51 / 0.62 | **adopted**: `SignalParams.transfer_method = "item_cf"` |
+| 5. Topic, question, credibility and imports beyond rich-get-richer | in-field, peer-normalized, no self-citations: rising imports +0.022 AUC, venue +0.017, author +0.012, topic/question +0.007 (not significant); global field-normalized: only global author credibility, +0.012 (forward route) | findings; not adopted yet |
 
 ## 1. Paper-level bridges
 
@@ -170,6 +174,100 @@ In production, `bridge_method_transfer` uses item CF by default
 (`SignalParams.transfer_method = "item_cf"`; `"recipe"` restores the neighbour share). Pilot:
 174 candidates; the judge's top scores are 4–5.
 
+## 5. Topic, question, credibility and imports beyond rich-get-richer
+
+**Question.** Do *what* a paper is about, the question it asks, who wrote it and what it borrows
+predict its success once the rich-get-richer effect is controlled for?
+
+**Population.** 2,103 papers published in T = 2020–2023, article and preprint types. 113
+duplicate records were collapsed by normalized title first.
+
+### Method
+
+- **Base model:** the bibliometric and rich-get-richer features. These are corpus and global
+  citations so far, coupling, reference count, team size, preprint, and expansion route.
+- **Feature families:** each family is added to the base, and its AUC gain is reported with a
+  paired bootstrap 90% interval, leave-one-cutoff-out.
+- **Populations:** all papers; the forward route only; cold start (no corpus citations at T);
+  global cold start (no citations anywhere at T, 624 papers).
+- **Models:** logistic. Gradient boosting gave the same or slightly worse results.
+- **Inputs available at T only.** Global counts come from OpenAlex `counts_by_year`, fetched by
+  `fetch_counts_by_year.py` for 5,410 works and 11,547 authors ($0.017). Only years ≤ T feed the
+  features.
+
+### Outcomes
+
+All are top quartile within T. They differ in what a paper is compared with.
+
+| Outcome | Definition | Why |
+| --- | --- | --- |
+| `y_corpus` | corpus citations in T+1…T+3 (as in exp2) | in-field uptake, raw |
+| `y_corpus_peer_ns` | the same without self-citations, relative to the 15 most similar same-year papers | in-field uptake, compared with like papers. Self-citations are 16% of corpus citations |
+| `y_g3` | global citations received in T+1…T+3 | raw global success |
+| `y_g3_field` | the same relative to the median of its OpenAlex subfield and year | removes field citation norms |
+| `y_g3_peer` | the same relative to the 15 most similar same-year papers | removes field and topic norms |
+
+In-field and global success are almost unrelated: `y_corpus` vs `y_global` r = −0.02, and
+`y_corpus_peer_ns` vs `y_g3_peer` r = 0.22.
+
+### Feature families (all as of T)
+
+| Family | Features |
+| --- | --- |
+| topic | semantic neighbourhood among earlier papers (abstract and problem vectors): in-field and global *heat* (neighbours' citation percentile by T, and in year T alone), typicality, crowding, local momentum, drift alignment |
+| question | *reach* (how many problems posed in T−2…T the paper's innovation matches), breadth, match to stated open limitations, typicality of the problem, atypicality of the method chosen for it |
+| author | in-field track record and topical expertise (corpus only), number of prior corpus papers |
+| author_global | OpenAlex citations received by T and in T−2…T, works by T, citations per work, team total |
+| venue | the venue's earlier papers' citation percentile, in-field and global (shrunk), and its prior count |
+| imports | share of references outside the corpus; *rising imports* (external works whose citations from corpus papers in T−1…T outpace T−4…T−2): the maximum and the count cited; *fresh imports* (external works cited at most twice before) |
+
+### Results: AUC gain over the base
+
+| Family | In-field, peer, no self-cites: all | forward route | cold start | Global field-normalized: all | forward route | Global peer: forward route |
+| --- | --- | --- | --- | --- | --- | --- |
+| topic | +0.007 (n.s.) | **+0.012** | +0.006 (n.s.) | −0.002 | −0.003 | −0.002 |
+| question | 0.000 | −0.004 | +0.002 | −0.001 | −0.005 | −0.004 |
+| author (corpus) | **+0.012** | +0.009 (n.s.) | **+0.018** | −0.004 | −0.001 | −0.001 |
+| author_global | +0.005 (n.s.) | +0.004 (n.s.) | +0.008 (n.s.) | +0.004 (n.s.) | **+0.012** | +0.008 (n.s.) |
+| venue | **+0.017** | +0.008 (n.s.) | **+0.027** | −0.003 | +0.003 | **+0.011** |
+| imports | **+0.022** | **+0.021** | **+0.029** | −0.001 | +0.004 | −0.002 |
+| all | **+0.035** | **+0.028** | **+0.039** | −0.002 | +0.004 | +0.003 |
+
+Bold marks a 90% interval above zero. Base AUC is 0.74 (in-field) and 0.83–0.84 (global).
+
+### What it means
+
+1. **Topic and question predict the audience, not the winner.** Against *raw* in-field
+   citations, topic and question add +0.03 to +0.045 AUC; the strongest feature is typicality
+   (posing the field's mainstream questions). Against same-topic peers, that gain mostly
+   disappears. Dense regions of the corpus have more potential citers. That is real and useful
+   for "which topics draw attention", but it does not pick the better paper within a topic.
+2. **Credibility shows its hand only like-for-like, and modestly.**
+   - **Author (corpus):** about half of the raw effect was self-citation; +0.012 survives.
+   - **Venue:** +0.017 in-field and +0.011 globally (forward route).
+   - **Global author credibility:** adds +0.012 for global field-normalized success (forward
+     route), the one family that helps there. Citations per work is its best feature.
+3. **Rising imports are the most robust new in-field signal.** They hold in every population,
+   including the forward route, where other families fade.
+   - **What helps:** citing external works that the field is importing at an increasing rate.
+   - **What hurts:** relying mostly on external references, or on brand-new imports (in-field).
+   - In short: ride an incoming wave; being the first importer pays off less in-field.
+4. **Global success stays mostly unexplained beyond the base.** After field normalization,
+   the base (dominated by global citations so far, reference count and route) is not
+   improved by any content family.
+5. **Selection on the outcome limits the global tests.** The forward and semantic routes
+   fetched papers in order of 2026 citations. Route alone has AUC 0.80 for global success
+   among papers uncited at T. An unbiased per-year sample of the field is needed before the
+   global conclusions can be trusted.
+
+### Coverage gap: external ideas
+
+80–94% of each year's references point outside the corpus, and 6,624 external works are cited
+at least 5 times by corpus papers. Reference hopping fetches the seed's foundations, not
+current imports. The import signal above uses only the external *ids* in `refs`. The next step
+is to fetch and embed those works, to see which fields DRO imports from and whether an
+external trend that matches DRO's problems predicts its import.
+
 ## Explorer
 
 See [06b-explorer.md](06b-explorer.md):
@@ -186,4 +284,7 @@ See [06b-explorer.md](06b-explorer.md):
 - **An unbiased per-year field sample** (needs downloads). Cluster-trend conclusions depend on
   the expansion routes ([08-backtest.md](08-backtest.md), section 1).
 - **An off-field audit of the corpus**, and deduplication of preprint/article twins.
+- **Adopting exp5 features in `early_work`.** Against raw corpus citations (its target), all
+  families together add +0.042 AUC (90% CI +0.030 to +0.055).
+- **Metadata and embeddings for external imports** (see section 5).
 - **Folding these experiments into `landscape backtest`**, so they re-run with one command.

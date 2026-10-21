@@ -15,19 +15,22 @@ from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import StandardScaler
 
 df = pd.read_parquet("data/backtest/exp5_papers.parquet")
-for c in ("cites_so_far", "coupling", "n_refs", "n_authors", "q_breadth", "a_n_prior", "v_n_prior", "x_n_rising", "x_n_fresh"):
+for c in ("cites_so_far", "coupling", "n_refs", "n_authors", "q_breadth", "a_n_prior", "v_n_prior", "x_n_rising", "x_n_fresh",
+          "g_cites_so_far", "ga_c_cum", "ga_c_rec", "ga_w_cum", "ga_rate"):
     df["l_" + c] = np.log1p(df[c].astype(float))
 for r in ("semantic", "author", "back"):
     df["route_" + r] = (df.route == r).astype(float)
 df["a_has_history"] = (df.a_n_with_history > 0).astype(float)
 
 FAM = {
-    "base": ["l_cites_so_far", "l_coupling", "l_n_refs", "l_n_authors", "preprint",
+    "base": ["l_cites_so_far", "l_g_cites_so_far", "l_coupling", "l_n_refs", "l_n_authors", "preprint",
              "route_semantic", "route_author", "route_back"],
-    "topic": ["t_heat", "t_typicality", "t_crowding", "t_momentum", "t_drift", "q_heat"],
+    "topic": ["t_heat", "t_typicality", "t_crowding", "t_momentum", "t_drift", "q_heat",
+              "t_gheat", "t_gnow", "q_gheat", "q_gnow"],
     "question": ["q_reach", "q_breadth", "l_q_breadth", "q_open_match", "q_typicality", "q_method_atypical"],
     "author": ["a_track", "a_expert", "a_cred_expert", "l_a_n_prior", "a_has_history"],
-    "venue": ["v_prestige", "l_v_n_prior"],
+    "venue": ["v_prestige", "v_gprestige", "l_v_n_prior"],
+    "author_global": ["l_ga_c_cum", "l_ga_c_rec", "l_ga_w_cum", "l_ga_rate", "ga_team"],
     "imports": ["x_ext_share", "x_rising_max", "l_x_n_rising", "l_x_n_fresh"],
 }
 for f in sum(FAM.values(), []):
@@ -43,6 +46,7 @@ MODELS = {
     "base + author": FAM["base"] + FAM["author"],
     "base + venue": FAM["base"] + FAM["venue"],
     "base + imports": FAM["base"] + FAM["imports"],
+    "base + author_global": FAM["base"] + FAM["author_global"],
     "base + topic + question": FAM["base"] + FAM["topic"] + FAM["question"],
     "all": sum(FAM.values(), []),
     "semantic only (topic + question)": FAM["topic"] + FAM["question"],
@@ -119,9 +123,10 @@ def run(d, y, label, kind="logit"):
 
 
 kinds = [a for a in sys.argv[1:] if a in ("logit", "hgb")] or ["logit"]
-OUTCOMES = [a for a in sys.argv[1:] if a.startswith("y_")] or ["y_global", "y_field", "y_peer", "y_corpus"]
+OUTCOMES = [a for a in sys.argv[1:] if a.startswith("y_")] or ["y_g3_field", "y_g3_peer", "y_corpus_peer_ns"]
 for kind in kinds:
     for y in OUTCOMES:
         run(df, y, "all routes", kind)
         run(df[df.route == "forward"], y, "forward route only", kind)
         run(df[df.cites_so_far == 0], y, "cold start (no corpus citations at T)", kind)
+        run(df[df.g_cites_so_far == 0], y, "global cold start (no citations anywhere at T)", kind)
