@@ -82,6 +82,27 @@ them through `model_score()`.
   expansion routes (see `08-backtest.md`, section 1).
 - An off-field audit of the corpus: how many papers, and which routes brought them in.
 
+## Phase 8c: research lab (2026-10-21)
+
+Read [features/08c-research-lab.md](features/08c-research-lab.md) for the experiments and decisions.
+No new metadata, embeddings, extraction or LLM calls were made.
+
+- Sampling decomposition: six of 15 well-supported topic trends reverse sign when separating
+  within-route change from route-mix change. This is sensitivity analysis, not bias correction.
+- Alias-aware production paper bridges: 10 already-cited alias recommendations removed;
+  375 rows refreshed, with 1,192 other signal rows unchanged. Model weights stay unchanged.
+- Added unlabeled core objects for `dro-pilot@T2019`. This allows a purged 2019 -> 2022 test
+  with complete 2023–2025 calendar outcomes. Baseline model p@10 0.1955, contrastive model
+  0.1864, broader-method list 0.2000. One-hit differences are not evidence of a significant gain.
+- Extra centered/CSLS features are **not adopted**. Broader-method lists stay optional.
+- New explorer **Research lab** view: sampling trajectories, alias-aware paper lists,
+  38 underconnected community pairs, topic-specific people and evaluation protocols.
+- CLI: `landscape research-lab --run-id dro-pilot`; writes offline artifacts under
+  `data/research_lab/dro-pilot/`, opens DB read-only. Cutoff preparation and
+  `landscape signals --run-id dro-pilot --paper-bridges-only` write derived tables.
+- Full-pipeline deduplication is still outstanding. The original rising pockets, coupling,
+  clusters and novelty can still be affected by duplicated records.
+
 ## Setting up the new machine
 
 1. **Code:** this repo has **no git remote**. Copy the folder (or add a remote and push from the

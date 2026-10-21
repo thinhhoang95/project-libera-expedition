@@ -24,6 +24,7 @@ from scipy import sparse
 
 from . import embed, store
 from .config import VEC_DIR, RunParams, SignalParams
+from .identity import work_aliases
 from .llm import LLMBudgetExceeded, OpenRouter
 
 log = logging.getLogger(__name__)
@@ -51,7 +52,7 @@ class Ctx:
     def __init__(self, con, run_id: str, p: RunParams):
         self.con, self.run_id, self.p, self.sp = con, run_id, p, p.signals
         self.papers = con.execute("""
-            SELECT v.paper_id, p.year, v.route, p.title FROM provenance v JOIN papers p USING (paper_id)
+            SELECT v.paper_id, p.year, v.route, p.title, p.doi FROM provenance v JOIN papers p USING (paper_id)
             WHERE v.run_id = ? AND p.year IS NOT NULL""", [run_id]).df()
         self.year = self.papers.set_index("paper_id").year
         self.route = self.papers.set_index("paper_id").route
@@ -704,11 +705,21 @@ def paper_bridges(ctx: Ctx, T: int) -> list[dict]:
     prob = prob[prob.year <= T]
     lab = prob.set_index("paper_id").cluster_id
     ids = ctx.papers[ctx.papers.year <= T].paper_id.tolist()
+    aliases = work_aliases(ctx.papers[ctx.papers.year <= T], ctx.authorships)
+    alias_records = defaultdict(list)
+    for pid, work in aliases.items():
+        alias_records[work].append(pid)
     R, pidx = _ref_matrix(ctx, ids)
     e = ctx.edges.assign(cy=ctx.edges.citing_id.map(ctx.year))
     e = e[e.cy <= T]
-    pop = e.groupby("cited_id").size()
-    cited_by = e.assign(X=e.citing_id.map(lab)).dropna(subset=["X"]).groupby("X").cited_id.apply(set)
+    distinct_citations = e.assign(
+        source_work=e.citing_id.map(lambda i: aliases.get(i, i)),
+        target_work=e.cited_id.map(lambda i: aliases.get(i, i))).drop_duplicates(["source_work", "target_work"])
+    distinct_citations = distinct_citations[distinct_citations.source_work != distinct_citations.target_work]
+    work_pop = distinct_citations.groupby("target_work").size()
+    pop = pd.Series({pid: work_pop.get(aliases.get(pid, pid), 0) for pid in ids})
+    cited_by = (e.assign(X=e.citing_id.map(lab), work=e.cited_id.map(lambda i: aliases.get(i, i)))
+                .dropna(subset=["X"]).groupby("X").work.apply(set))
     iid, iv = embed.load_vectors("innovation", ids=list(lab.index), version=ver)
     lid, lv = embed.load_vectors("limitations", ids=list(lab.index), version=ver)
     qid, qv = embed.load_vectors("problem", ids=list(lab.index), version=ver)
@@ -742,7 +753,9 @@ def paper_bridges(ctx: Ctx, T: int) -> list[dict]:
             keep = (Lv @ gc) <= generic_cut
             Lv, Lids = Lv[keep], [x for x, k in zip(Lids, keep) if k]
         already = cited_by.get(X, set())
-        idx = np.array([k for k, x in enumerate(iid) if cX[k] != X and x not in already])
+        member_works = {aliases.get(i, i) for i in members}
+        idx = np.array([k for k, x in enumerate(iid)
+                        if aliases.get(x, x) not in member_works | already], dtype=int)
         if not len(idx):
             continue
         S = iv[idx] @ Lv.T if len(Lv) else None
@@ -756,6 +769,14 @@ def paper_bridges(ctx: Ctx, T: int) -> list[dict]:
         # two lists per cluster: most likely adoptions, and hidden gems (cited at most once so far),
         # ranked by the same model (long-tail AUC 0.84 in the backtest)
         order = np.argsort(-sc)
+        seen_works = set()
+        distinct = []
+        for j in order:
+            work = aliases.get(iid[idx[j]], iid[idx[j]])
+            if work not in seen_works:
+                seen_works.add(work)
+                distinct.append(j)
+        order = distinct
         gems = [j for j in order if feats.lpop.iloc[j] <= np.log1p(1)][:sp.paper_bridges_gems_per_cluster]
         picks = [(j, False) for j in order[:sp.paper_bridges_per_cluster]] + [(j, True) for j in gems]
         for rank, (j, gem_list) in enumerate(picks, 1):
@@ -769,6 +790,8 @@ def paper_bridges(ctx: Ctx, T: int) -> list[dict]:
                               "problem_sim": round(float(prob_sim[j]), 4), "limitation_sim": round(float(lim3[j]), 4),
                               "best_matching_limitation": best_lim, "kind": ctx.kind.get(X)},
                              [i] + ([best_lim] if best_lim else []), T, kind=str(ctx.kind.get(X) or "stable")))
+            rows[-1]["features"] = json.dumps(json.loads(rows[-1]["features"]) | {
+                "canonical_work": aliases.get(i, i), "alias_records": alias_records.get(aliases.get(i, i), [i])})
     out, seen = [], {}  # rank within each (cluster, list)
     for r in rows:
         key = (json.loads(r["subject"])["cluster_id"], r["signal_type"])
@@ -776,6 +799,21 @@ def paper_bridges(ctx: Ctx, T: int) -> list[dict]:
         r["rank"] = seen[key]
         out.append(r)
     return out
+
+
+def refresh_paper_bridges(con, run_id: str, p: RunParams) -> dict:
+    """Refresh only the two paper-bridge lists, preserving all judged and other signal rows."""
+    ctx = Ctx(con, run_id, p)
+    rows = pd.DataFrame(paper_bridges(ctx, ctx.t_max))
+    con.execute("BEGIN TRANSACTION")
+    try:
+        store.replace_run_rows(con, "signals", run_id, rows,
+                               "AND signal_type IN ('bridge_paper', 'bridge_paper_gem')")
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
+    return {"paper_bridges": len(rows), "judge_spend_usd": 0.0}
 
 
 def early_work(ctx: Ctx, T: int, growth: pd.DataFrame, novelty: pd.Series | None) -> list[dict]:

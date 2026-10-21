@@ -169,9 +169,12 @@ def cmd_core(a, con):
 
 
 def cmd_signals(a, con):
-    from .signals import build_signals
+    from .signals import build_signals, refresh_paper_bridges
 
-    stats = build_signals(con, a.run_id, _params(con, a.run_id), skip_judge=a.skip_judge)
+    if a.paper_bridges_only:
+        stats = refresh_paper_bridges(con, a.run_id, _params(con, a.run_id))
+    else:
+        stats = build_signals(con, a.run_id, _params(con, a.run_id), skip_judge=a.skip_judge)
     _add_spend(con, a.run_id, "llm_judge", stats.get("judge_spend_usd", 0.0))
     print(json.dumps(stats, indent=2, default=str))
 
@@ -190,6 +193,14 @@ def cmd_viz(a, con):
     from .viz import build_viz
 
     print(json.dumps(build_viz(con, a.run_id, _params(con, a.run_id)), indent=2))
+
+
+def cmd_research_lab(a, con):
+    from .research_lab import run_lab
+
+    path = run_lab(con, a.run_id, _params(con, a.run_id), as_of=a.as_of,
+                   cutoffs=tuple(int(t) for t in a.cutoffs.split(",")))
+    print(f"Review artifacts: {path}")
 
 
 def cmd_status(a, con):
@@ -220,7 +231,7 @@ def main(argv=None):
     s.set_defaults(fn=cmd_new_run)
 
     for name, fn in [("expand", cmd_expand), ("preprints", cmd_preprints), ("semantic", cmd_semantic), ("extract", cmd_extract),
-                     ("qa", cmd_qa), ("embed", cmd_embed), ("core", cmd_core), ("viz", cmd_viz), ("signals", cmd_signals), ("backtest", cmd_backtest), ("status", cmd_status)]:
+                     ("qa", cmd_qa), ("embed", cmd_embed), ("core", cmd_core), ("viz", cmd_viz), ("signals", cmd_signals), ("backtest", cmd_backtest), ("research-lab", cmd_research_lab), ("status", cmd_status)]:
         s = sub.add_parser(name)
         s.add_argument("--run-id", required=True)
         if name == "extract":
@@ -231,8 +242,13 @@ def main(argv=None):
         if name == "backtest":
             s.add_argument("--cutoffs", default="2020,2021,2022,2023")
             s.add_argument("--rebuild", action="store_true", help="re-fit the cutoff runs")
+        if name == "research-lab":
+            s.add_argument("--cutoffs", default="2019,2020,2021,2022,2023")
+            s.add_argument("--as-of", help="local calendar date YYYY-MM-DD; latest full year is used for live views")
         if name == "signals":
             s.add_argument("--skip-judge", action="store_true")
+            s.add_argument("--paper-bridges-only", action="store_true",
+                           help="refresh the two paper-bridge lists without recomputing other signals or calling the judge")
         if name == "core":
             s.add_argument("--skip-labels", action="store_true")
         s.set_defaults(fn=fn)
@@ -252,7 +268,7 @@ def main(argv=None):
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    con = store.connect()
+    con = store.connect(read_only=a.cmd == "research-lab")
     try:
         a.fn(a, con)
     finally:

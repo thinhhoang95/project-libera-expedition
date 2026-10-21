@@ -189,6 +189,14 @@ X start citing?
 - **Pilot:** 250 + 125 rows, split by `group_kind`.
 - **Not judged:** the LLM judge does not see these rows.
 
+Phase 8c added conservative work identity to these two lists: equal DOIs, or equal substantial
+titles with a shared author, identify preprint/article aliases available at the cutoff. A list
+excludes works already cited by or present in the target community, emits one version per
+work, and measures popularity over distinct citing works across aliases. Refresh just these
+lists with `landscape signals --run-id dro-pilot --paper-bridges-only`. This removed 10 false
+missing bridges on the pilot; the original model weights are unchanged. See
+[08c-research-lab.md](08c-research-lab.md) for the new experiments and optional review views.
+
 ### LLM judge
 
 - **Inputs:** the top 50 candidates of each bridge type go to `deepseek/deepseek-v4-pro` (fp8+,
@@ -251,6 +259,7 @@ These lists are internal decision support, not a public ranking of people (recip
 - Clusters are fitted on all years. That is fine for the live run, but the Phase 8 backtest
   must re-fit at each cutoff, as the recipe requires.
 - About 2% of the corpus is duplicate OpenAlex records of one paper (preprint and article
-  versions). They inflate coupling and local momentum for those papers.
+  versions). They inflate coupling and local momentum for those papers. Paper-bridge evidence
+  and citation counts now account for conservative aliases; the other pipeline stages do not.
 - The judge knows the future. Backtests must switch it off (`--skip-judge`) or use a model with
   an earlier training cutoff.

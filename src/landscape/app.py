@@ -94,7 +94,9 @@ if not runs:
     st.stop()
 with st.sidebar:
     st.session_state.run_id = st.selectbox("Run", runs)
-    view = st.radio("View", ["Map & grid", "Experiments", "Corpus view", "Facet review", "Cluster review"])
+    views = ["Map & grid", "Research lab", "Experiments", "Corpus view", "Facet review", "Cluster review"]
+    requested_view = st.query_params.get("view", "Map & grid")
+    view = st.radio("View", views, index=views.index(requested_view) if requested_view in views else 0)
     st.session_state.reviewer = st.text_input("Reviewer", value=st.session_state.get("reviewer", ""),
                                               placeholder="your name (stored with every judgment)")
 RUN = st.session_state.run_id
@@ -1104,11 +1106,17 @@ def view_clusters():
             st.dataframe(prev, hide_index=True, width="stretch")
 
 
+def view_research_lab():
+    from landscape.research_lab_view import render_lab
+
+    render_lab(RUN, q, paper_card, record)
+
+
 def view_experiments():
     from landscape.experiments_view import render_experiments
 
     render_experiments(RUN)
 
 
-{"Map & grid": view_map, "Experiments": view_experiments, "Corpus view": view_corpus, "Facet review": view_facets,
- "Cluster review": view_clusters}[view]()
+{"Map & grid": view_map, "Research lab": view_research_lab, "Experiments": view_experiments,
+ "Corpus view": view_corpus, "Facet review": view_facets, "Cluster review": view_clusters}[view]()
