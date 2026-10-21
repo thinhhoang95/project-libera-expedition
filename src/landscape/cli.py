@@ -351,6 +351,12 @@ def main(argv=None):
             s.add_argument("--months", type=int, default=12, help="horizon after the snapshot date")
         s.set_defaults(fn=fn)
 
+    s = sub.add_parser("field-report", help="a field intelligence report: a strong model reasons over the portfolio")
+    s.add_argument("--run-id", required=True)
+    s.add_argument("--model", default="claude", help="claude, gpt, or any OpenRouter slug (e.g. google/gemini-3.5-flash)")
+    s.add_argument("--focus", help="what the reader wants the report to prioritize")
+    s.set_defaults(fn=None)
+
     s = sub.add_parser("explorer", help="open the Streamlit explorer (close it before running pipeline steps)")
     s.add_argument("--port", type=int, default=8501)
     s.set_defaults(fn=None)
@@ -359,6 +365,13 @@ def main(argv=None):
     if a.cmd in ("serve", "worker", "queue", "jobs", "migrate-layout"):
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
         return _app_command(a)
+    if a.cmd == "field-report":  # reads the web app's replica through its view functions; no database writes
+        from .field_report import generate
+
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        generate(a.run_id, a.model, a.focus)
+        return
     if a.cmd == "explorer":
         import subprocess
         from pathlib import Path

@@ -2,7 +2,7 @@ import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
   Bell, Boxes, CheckCircle2, Clock, Compass, FileText, FlaskConical, FolderKanban, Grid2x2, Home, Keyboard, Layers3,
-  ListChecks, Loader2, Menu, Microscope, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Shapes, Sun, Tags, Workflow, X, XCircle,
+  ListChecks, Loader2, Menu, Microscope, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, ScrollText, Search, Shapes, Sun, Tags, Workflow, X, XCircle,
 } from "lucide-react";
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -18,6 +18,7 @@ import { Boundary, PageSkeleton } from "./ui";
 
 export const NAV = [
   { to: "start", label: "Start", icon: Home, group: "Explore", key: "s" },
+  { to: "report", label: "Field report", icon: ScrollText, group: "Explore", key: "i" },
   { to: "explore", label: "Facets", icon: Shapes, group: "Explore", key: "f" },
   { to: "map", label: "Map & grid", icon: Grid2x2, group: "Explore", key: "m" },
   { to: "paper", label: "My paper", icon: FileText, group: "Explore", key: "p" },

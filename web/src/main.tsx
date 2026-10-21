@@ -11,6 +11,7 @@ import "./index.css";
 const page = <K extends string>(load: () => Promise<Record<K, React.ComponentType>>, name: K) =>
   lazy(() => load().then((m) => ({ default: m[name] })));
 const Experiments = page(() => import("./pages/Experiments"), "Experiments");
+const FieldReport = page(() => import("./pages/FieldReport"), "FieldReport");
 const Explore = page(() => import("./pages/Explore"), "Explore");
 const MapGrid = page(() => import("./pages/MapGrid"), "MapGrid");
 const MyPaper = page(() => import("./pages/MyPaper"), "MyPaper");
@@ -54,6 +55,7 @@ createRoot(document.getElementById("root")!).render(
                   <Route path="start" element={<P><StartHere /></P>} />
                   <Route path="paper" element={<P><MyPaper /></P>} />
                   <Route path="paper/:pid" element={<P><MyPaper /></P>} />
+                  <Route path="report" element={<P><FieldReport /></P>} />
                   <Route path="explore" element={<P><Explore /></P>} />
                   <Route path="explore/:facet" element={<P><Explore /></P>} />
                   <Route path="map" element={<P><MapGrid /></P>} />

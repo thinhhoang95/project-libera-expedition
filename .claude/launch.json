@@ -4,22 +4,62 @@
     {
       "name": "app",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "--no-sync", "landscape", "serve", "--port", "8600"],
+      "runtimeArgs": [
+        "run",
+        "--no-sync",
+        "landscape",
+        "serve",
+        "--port",
+        "8600"
+      ],
       "port": 8600,
-      "env": { "UV_PROJECT_ENVIRONMENT": "/Users/thinhhoang/.venvs/libera-expedition" }
+      "env": {
+        "UV_PROJECT_ENVIRONMENT": "/Users/thinhhoang/.venvs/libera-expedition"
+      }
+    },
+    {
+      "name": "app-alt",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "--no-sync",
+        "landscape",
+        "serve",
+        "--port",
+        "8610",
+        "--no-worker"
+      ],
+      "port": 8610,
+      "env": {
+        "UV_PROJECT_ENVIRONMENT": "/Users/thinhhoang/.venvs/libera-expedition"
+      }
     },
     {
       "name": "web-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "web", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "web",
+        "run",
+        "dev"
+      ],
       "port": 5173
     },
     {
       "name": "explorer",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "--no-sync", "landscape", "explorer", "--port", "8501"],
+      "runtimeArgs": [
+        "run",
+        "--no-sync",
+        "landscape",
+        "explorer",
+        "--port",
+        "8501"
+      ],
       "port": 8501,
-      "env": { "UV_PROJECT_ENVIRONMENT": "/Users/thinhhoang/.venvs/libera-expedition" }
+      "env": {
+        "UV_PROJECT_ENVIRONMENT": "/Users/thinhhoang/.venvs/libera-expedition"
+      }
     }
   ]
 }
