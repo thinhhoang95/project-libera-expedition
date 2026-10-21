@@ -10,6 +10,7 @@ import asyncio
 import colorsys
 import json
 import logging
+import re
 import zlib
 from collections import Counter, defaultdict
 
@@ -21,7 +22,7 @@ from scipy import sparse
 
 from . import embed, store
 from .config import ClusterParams, LabelParams, RunParams, run_vectors
-from .llm import LLMBudgetExceeded, OpenRouter
+from .llm import LLMBudgetExceeded, OpenRouter, quantizations_for
 
 log = logging.getLogger(__name__)
 GLOSS_FACETS = {"problem", "method"}
@@ -123,10 +124,48 @@ def ctfidf_terms(texts_by_cluster: dict[str, list[str]], top: int = 15) -> dict[
     return {k: words[np.argsort(-score[i])[:top]].tolist() for i, k in enumerate(keys)}
 
 
+BOILERPLATE = {
+    # statements that say a facet is absent rather than state one; the extraction prompt asks for null here
+    "limitations": [
+        re.compile(r"^\s*(null|none|n/?a)\.?\s*$", re.I),
+        re.compile(r"\bno (specific |explicit |particular )?(limitations?|weakness(es)?|drawbacks?)\b[^.]*"
+                   r"\b(stated|mentioned|given|reported|discussed|identified|specified)\b", re.I),
+        re.compile(r"\b(specific )?limitations? (are|is) not (explicitly )?(stated|mentioned|given|discussed)\b",
+                   re.I),
+    ],
+}
+# "future work is discussed" with nothing specific: only short statements, so a named open problem stays
+_BOILERPLATE_SHORT = re.compile(r"\b(open (questions|problems|challenges)|future (research|work|directions|"
+                                r"extensions|prospects)|research gaps|challenges)\b", re.I)
+
+
+def is_boilerplate(facet: str, text: str | None) -> bool:
+    if not isinstance(text, str) or facet not in BOILERPLATE:
+        return False
+    if any(p.search(text) for p in BOILERPLATE[facet]):
+        return True
+    return len(text.split()) <= 12 and bool(_BOILERPLATE_SHORT.search(text))
+
+
+def seed_titles(con, run_id: str) -> str:
+    """Distinct seed titles of a run (cutoff runs share their base run's seeds)."""
+    row = con.execute("SELECT seed_ids FROM runs WHERE run_id = ?", [run_id]).fetchone()
+    titles = con.execute("SELECT DISTINCT lower(title) FROM papers WHERE paper_id IN (SELECT unnest(?))",
+                         [list(row[0]) if row and row[0] is not None else []]).fetchall()
+    return "; ".join(f'"{t[0]}"' for t in titles if t[0]) or "unknown"
+
+
 def cluster_facet(con, run_id: str, facet: str, alpha: float, cp: ClusterParams, version: str,
-                  corpus_ids: list[str], graph_dim: int = 256):
+                  corpus_ids: list[str], graph_dim: int = 256, lp: LabelParams | None = None):
     """Cluster one facet at one alpha at all resolutions. Returns (clusters_df, assignments_df,
-    centroids {cluster_id: vec768}, label_inputs)."""
+    centroids {cluster_id: vec768}, label_inputs, consolidation_spend)."""
+    texts = con.execute("""SELECT paper_id, text FROM facets WHERE facet = ? AND paper_id IN
+                           (SELECT paper_id FROM provenance WHERE run_id = ?)""",
+                        [facet, run_id]).df().drop_duplicates("paper_id").set_index("paper_id").text
+    if cp.drop_boilerplate and facet in BOILERPLATE:
+        drop = {k for k, t in texts.items() if is_boilerplate(facet, t)}
+        corpus_ids = [i for i in corpus_ids if i not in drop]
+        log.info("%s: dropped %d boilerplate statements before clustering", facet, len(drop))
     ids, v256 = embed.blended(facet, alpha, corpus_ids, dim=graph_dim, version=version)
     if len(ids) < 50:
         log.warning("%s: only %d vectors, skipping", facet, len(ids))
@@ -134,47 +173,77 @@ def cluster_facet(con, run_id: str, facet: str, alpha: float, cp: ClusterParams,
     _, v768 = embed.blended(facet, alpha, ids, dim=768, version=version)
     g = knn_graph(v256, cp.k, cp.drop_edge_pct)
     seeds = cp.seed_values or list(range(cp.n_seeds))
-    texts = con.execute("""SELECT paper_id, text FROM facets WHERE facet = ? AND paper_id IN
-                           (SELECT paper_id FROM provenance WHERE run_id = ?)""",
-                        [facet, run_id]).df().drop_duplicates("paper_id").set_index("paper_id").text
-    clusters, assigns, cents, label_inputs = [], [], {}, {}
-    membership_by_res = {}
+    levels = {}
     for res_name in RES_ORDER:
         res = cp.resolutions[res_name]
         ref, stab, sizes, keep = stable_partition(g, res, seeds, cp.stability_jaccard,
                                                   cp.min_cluster_size)
-        order = np.argsort(-sizes)
-        rank = {int(c): i for i, c in enumerate(order)}
-        cid = lambda c: f"{facet}:{alpha:.1f}:{res_name}:{rank[int(c)]:03d}"  # noqa: E731
         coh = cluster_coherence(v256, ref, sizes, cp.min_cluster_size)
         # hub: a coherent body of work whose boundary moves between Leiden seeds (on the pilot,
         # the DRO core). Kept and assigned, but reported separately from stable clusters.
         stable_coh = coh[keep & ~np.isnan(coh)]
         coh_floor = np.percentile(stable_coh, 25) if len(stable_coh) else np.inf
         hub = (~keep) & (sizes >= max(cp.hub_min_size, cp.hub_min_share * len(ids))) & (coh >= coh_floor)
-        kind = np.where(keep, "stable", np.where(hub, "hub", "unstable"))
-        assigned = keep | hub
-        lab = np.array([cid(c) if assigned[c] else None for c in ref], dtype=object)
+        kind = np.where(keep, "stable", np.where(hub, "hub", "unstable")).astype(object)
+        levels[res_name] = {"ref": ref, "stab": stab, "sizes": sizes, "keep": keep, "coh": coh, "kind": kind}
+    decisions, spend = {}, 0.0
+    if cp.consolidate and lp is not None:
+        decisions, spend = consolidate_levels(facet, levels, ids, v768, texts, cp, lp, seed_titles(con, run_id))
+
+    clusters, assigns, cents, label_inputs = [], [], {}, {}
+    membership_by_res = {}
+    for res_name in RES_ORDER:
+        L = levels[res_name]
+        ref, stab, sizes, keep, coh, kind = L["ref"], L["stab"], L["sizes"], L["keep"], L["coh"], L["kind"]
+        merge, generic, notes = decisions.get(res_name, ({}, {}, {}))
+        # ids follow the raw partition, so a cluster keeps its id with or without consolidation
+        order = np.argsort(-sizes)
+        rank = {int(c): i for i, c in enumerate(order)}
+        cid = lambda c: f"{facet}:{alpha:.1f}:{res_name}:{rank[int(c)]:03d}"  # noqa: E731
+        final = ref.copy()
+        for c, s in merge.items():
+            final[ref == c] = s
+            kind[c] = "merged"
+            if keep[c]:
+                kind[s] = "stable"  # a hub that absorbs a stable cluster reports as stable
+        if cp.drop_generic:
+            for c in generic:
+                kind[c] = "generic"
+        fsizes = np.bincount(final, minlength=len(sizes))
+        if merge:
+            coh = coh.copy()
+            fcoh = cluster_coherence(v256, final, fsizes, cp.min_cluster_size)
+            for s in set(merge.values()):
+                coh[s] = fcoh[s]
+        assigned = np.isin(kind, ["stable", "hub"])
+        lab = np.array([cid(c) if assigned[c] else None for c in final], dtype=object)
         membership_by_res[res_name] = lab
         sims = np.full(len(ids), np.nan)
         by_cluster_texts = {}
         level_cents = {}
         for c in order:
-            members = np.where(ref == c)[0]
+            absorbed = kind[c] == "merged"
+            members = np.where((ref if absorbed else final) == c)[0]
+            if not len(members):
+                continue
             cent = v768[members].mean(axis=0)
             cent /= np.linalg.norm(cent) or 1
             s = v768[members] @ cent
-            sims[members] = s
+            if not absorbed:
+                sims[members] = s
             key = cid(c)
             cents[key] = cent
-            if sizes[c] >= cp.min_cluster_size:
+            if len(members) >= cp.min_cluster_size and not absorbed:
                 level_cents[key] = cent
             top10 = members[np.argsort(-s)[:10]]
             label_inputs[key] = [texts.get(ids[i], "") for i in top10]
             by_cluster_texts[key] = [texts.get(ids[i], "") for i in members]
             clusters.append({"cluster_id": key, "facet": facet, "resolution": res_name,
-                             "alpha": alpha, "stability": float(stab[c]), "is_stable": bool(keep[c]),
-                             "kind": str(kind[c]), "coherence": float(coh[c]), "size": int(sizes[c])})
+                             "alpha": alpha, "stability": float(stab[c]), "is_stable": kind[c] == "stable",
+                             "kind": str(kind[c]), "coherence": float(coh[c]), "size": len(members),
+                             "merged_into": cid(merge[c]) if c in merge else None,
+                             "is_generic": c in generic,
+                             "consolidation_note": notes.get(c) or generic.get(c)})
         # centrality: z-score of a centroid's mean cosine to the other centroids of this level
         if len(level_cents) > 2:
             keys = list(level_cents)
@@ -195,10 +264,10 @@ def cluster_facet(con, run_id: str, facet: str, alpha: float, cp: ClusterParams,
                                      "alpha": alpha, "cluster_id": lab, "sim_to_centroid": sims,
                                      "raw_cluster_id": [cid(c) for c in ref]}))
         log.info("%s a=%.1f %s: %d clusters (+%d fragments < %d papers), %d stable, %d hubs, "
-                 "%.0f%% papers assigned", facet, alpha, res_name,
+                 "%d merged, %d flagged generic, %.0f%% papers assigned", facet, alpha, res_name,
                  int((sizes >= cp.min_cluster_size).sum()), int((sizes < cp.min_cluster_size).sum()),
-                 cp.min_cluster_size, int(keep.sum()), int(hub.sum()),
-                 100 * np.mean([x is not None for x in lab]))
+                 cp.min_cluster_size, int((kind == "stable").sum()), int((kind == "hub").sum()),
+                 len(merge), len(generic), 100 * np.mean([x is not None for x in lab]))
     cdf = pd.DataFrame(clusters)
     # parent links: majority overlap with the next coarser level
     parents = {}
@@ -211,7 +280,7 @@ def cluster_facet(con, run_id: str, facet: str, alpha: float, cp: ClusterParams,
                 best[c] = (p_, n)
         parents.update({c: p_ for c, (p_, _) in best.items()})
     cdf["parent_cluster_id"] = cdf.cluster_id.map(parents)
-    return cdf, pd.concat(assigns, ignore_index=True), cents, label_inputs
+    return cdf, pd.concat(assigns, ignore_index=True), cents, label_inputs, spend
 
 
 # ------------------------------------------------------------------ labels
@@ -258,6 +327,147 @@ async def label_clusters(rows: list[dict], inputs: dict, lp: LabelParams) -> tup
     return out, client.spent
 
 
+# ------------------------------------------------------------------ consolidation
+
+_ITEMS = lambda props, req: {"type": "array", "items": {  # noqa: E731
+    "type": "object", "additionalProperties": False, "required": req, "properties": props}}
+CONSOLIDATE_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["merge", "generic"],
+    "properties": {
+        "merge": _ITEMS({"ids": {"type": "array", "items": {"type": "integer"}},
+                         "reason": {"type": "string"}, "difference": {"type": "string"}},
+                        ["ids", "reason", "difference"]),
+        "generic": _ITEMS({"id": {"type": "integer"}, "reason": {"type": "string"},
+                           "shared_subject": {"type": "string"}}, ["id", "reason", "shared_subject"]),
+    },
+}
+CONSOLIDATE_PROMPT = """You review the full catalogue of "{facet}" categories found by clustering the {facet}
+statements of {n} research papers. The corpus was collected around these seed papers, so their subject is
+the corpus's central topic: {seeds}. Each category shows its id, its number of papers, its most distinctive
+terms and the statements of the papers closest to its centre.
+
+Return:
+- "merge": groups of ids that are the same {facet} category described in different words: their statements
+  are interchangeable, so an expert would file their papers under one heading. If you can name any difference
+  in focus, subject, technique or application between two categories, they are not the same category; nor
+  are a broad category and a narrower one inside it. Belonging to the same wider area is not enough. Most
+  catalogues need no merge at all.
+- "generic": ids too general or vague to be a useful category next to the others: boilerplate that almost
+  any paper could state (e.g. "no specific limitation is stated", "future work is discussed", "outperforms
+  existing methods", "validated by simulation"), a document genre with no specific subject (e.g. "reviews
+  of optimization methods"), or a catch-all whose statements share no specific subject. A broad category
+  with a real subject is not generic, and neither is a review or survey of a specific subject, nor a
+  category about the corpus's central topic, however common it is.
+Give a short reason for each entry. For each merge group also give "difference": a difference in focus,
+subject, technique or application that would make an expert keep its members apart, or "" if there is none. For each generic id also give
+"shared_subject": the specific subject its statements share, or "" if there is none. Return empty lists when
+nothing applies.
+
+Catalogue:
+{catalogue}"""
+
+
+def _clip(text: str, n: int = 300) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= n else text[:n].rsplit(" ", 1)[0] + "…"
+
+
+def _stated(text: str) -> bool:
+    return text.strip().strip(".").lower() not in ("", "none", "n/a", "no difference", "nothing")
+
+
+def _catalogue(ids, v768, texts, ref, cands: list[int], n_stmt: int = 5):
+    """Prompt text for one clustering's catalogue, and the raw centroid of each listed cluster."""
+    members = {c: np.where(ref == c)[0] for c in cands}
+    terms = ctfidf_terms({c: [texts.get(ids[i], "") for i in m] for c, m in members.items()})
+    cents, entries = {}, []
+    for c, m in members.items():
+        cent = v768[m].mean(axis=0)
+        cent /= np.linalg.norm(cent) or 1
+        cents[c] = cent
+        top = m[np.argsort(-(v768[m] @ cent))[:n_stmt]]
+        stm = "\n".join(f"  - {_clip(texts.get(ids[i]))}" for i in top if isinstance(texts.get(ids[i]), str))
+        entries.append(f"[id {c}] {len(m)} papers · terms: {', '.join(terms[c][:8])}\n{stm}")
+    return "\n\n".join(entries), cents
+
+
+async def _review_catalogues(jobs: list[tuple[str, str]], lp: LabelParams) -> tuple[dict, float]:
+    client = OpenRouter(lp.consolidate_model, quantizations_for(lp.consolidate_model), lp.concurrency,
+                        lp.consolidate_spend_cap_usd)
+    out = {}
+
+    async def one(key, prompt):
+        try:
+            obj, _, err = await client.chat_json(prompt, CONSOLIDATE_SCHEMA, "catalogue_review", max_tokens=8000)
+        except LLMBudgetExceeded:
+            return
+        if obj:
+            out[key] = obj
+        else:
+            log.warning("catalogue review failed for %s: %s", key, err)
+
+    try:
+        await asyncio.gather(*(one(k, pr) for k, pr in jobs))
+    finally:
+        await client.close()
+    return out, client.spent
+
+
+def consolidate_levels(facet: str, levels: dict, ids, v768, texts, cp: ClusterParams, lp: LabelParams,
+                       seeds: str = "unknown"):
+    """One catalogue review per resolution. Returns ({res: (merge {c: survivor}, generic {c: reason},
+    notes {c: reason})}, spend). A group merges into its largest member; a member joins only if its
+    centroid cosine to that member is in the top (1 - merge_pair_quantile) of sibling pairs."""
+    jobs, ctx = [], {}
+    for res_name, L in levels.items():
+        if res_name not in cp.consolidate_levels:
+            continue
+        cands = [int(c) for c in np.where(np.isin(L["kind"], ["stable", "hub"]))[0]]
+        if len(cands) < 3:
+            continue
+        cat, cents = _catalogue(ids, v768, texts, L["ref"], cands)
+        n = int(L["sizes"][cands].sum())
+        jobs.append((res_name, CONSOLIDATE_PROMPT.format(facet=facet, n=n, seeds=seeds, catalogue=cat)))
+        ctx[res_name] = cents
+    replies, spend = asyncio.run(_review_catalogues(jobs, lp))
+    out = {}
+    for res_name, obj in replies.items():
+        cents, sizes = ctx[res_name], levels[res_name]["sizes"]
+        keys = list(cents)
+        pos = {k: i for i, k in enumerate(keys)}
+        m = np.stack([cents[k] for k in keys])
+        sim = m @ m.T
+        thr = float(np.quantile(sim[np.triu_indices(len(keys), 1)], cp.merge_pair_quantile))
+        # self-consistency: a merge whose members differ, or a generic category with a subject, is dropped
+        generic = {g["id"]: g["reason"] for g in obj["generic"]
+                   if g["id"] in cents and not _stated(g["shared_subject"])}
+        blocked = generic if cp.drop_generic else {}
+        merge, notes, used = {}, {}, set()
+        for grp in obj["merge"]:
+            if _stated(grp["difference"]):
+                log.info("%s %s: merge %s rejected (difference: %s)", facet, res_name, grp["ids"],
+                         _clip(grp["difference"], 160))
+                continue
+            group = [c for c in dict.fromkeys(grp["ids"]) if c in cents and c not in blocked and c not in used]
+            if len(group) < 2:
+                continue
+            s = max(group, key=lambda c: (sizes[c], -c))
+            for c in group:
+                if c == s:
+                    continue
+                cos = float(sim[pos[c], pos[s]])
+                if cos < thr:
+                    log.info("%s %s: merge %d -> %d rejected (cos %.3f < %.3f): %s",
+                             facet, res_name, c, s, cos, thr, grp["reason"])
+                    continue
+                merge[c], notes[c] = s, grp["reason"]
+                used.update((c, s))
+        out[res_name] = (merge, generic, notes)
+        log.info("%s %s: %d merged, %d flagged generic (pair threshold %.3f)", facet, res_name, len(merge),
+                 len(generic), thr)
+    return out, spend
+
+
 # ------------------------------------------------------------------ orchestration
 
 def build_core(con, run_id: str, p: RunParams, skip_labels: bool = False,
@@ -267,13 +477,16 @@ def build_core(con, run_id: str, p: RunParams, skip_labels: bool = False,
                             WHERE v.run_id = ?""", [run_id]).df()
     corpus_ids = corpus.paper_id.tolist()
     all_clusters, all_assign, all_cents, all_inputs = [], [], {}, {}
+    consolidation_spend = 0.0
     for facet in cp.facets:
         alphas = cp.gloss_alphas if facet in GLOSS_FACETS else [0.0]
         for alpha in alphas:
-            r = cluster_facet(con, run_id, facet, alpha, cp, version, corpus_ids, p.embedding.graph_dim)
+            r = cluster_facet(con, run_id, facet, alpha, cp, version, corpus_ids, p.embedding.graph_dim,
+                              lp=p.labels)
             if r is None:
                 continue
-            cdf, adf, cents, inputs = r
+            cdf, adf, cents, inputs, spent = r
+            consolidation_spend += spent
             all_clusters.append(cdf)
             all_assign.append(adf)
             all_cents.update(cents)
@@ -288,14 +501,14 @@ def build_core(con, run_id: str, p: RunParams, skip_labels: bool = False,
             colors[cid] = col
     clusters["color"] = clusters.cluster_id.map(colors)
 
-    # labels: LLM for stable coarse+medium (and fine if configured), c-TF-IDF terms otherwise
+    # labels: LLM for stable/hub/generic coarse+medium (and fine if configured), c-TF-IDF terms otherwise
     clusters["label"] = clusters.top_terms.map(lambda t: ", ".join(t[:3]) if t is not None else None)
     clusters["description"] = None
     clusters["label_model"] = "ctfidf"
     spend = 0.0
     if not skip_labels:
         levels = RES_ORDER if p.labels.label_fine else ["coarse", "medium"]
-        todo = clusters[clusters.kind.isin(["stable", "hub"]) & clusters.resolution.isin(levels)].to_dict("records")
+        todo = clusters[clusters.kind.isin(["stable", "hub", "generic"]) & clusters.resolution.isin(levels)].to_dict("records")
         log.info("labelling %d clusters with %s", len(todo), p.labels.model)
         labels, spend = asyncio.run(label_clusters(todo, all_inputs, p.labels))
         for cid, (lab, desc) in labels.items():
@@ -327,7 +540,7 @@ def build_core(con, run_id: str, p: RunParams, skip_labels: bool = False,
     cols = ["cluster_id", "facet", "resolution", "alpha", "label", "description", "top_terms",
             "stability", "is_stable", "kind", "coherence", "centrality", "size", "parent_cluster_id",
             "color", "time_bucket_years",
-            "label_model"]
+            "label_model", "merged_into", "is_generic", "consolidation_note"]
     store.replace_run_rows(con, "clusters", run_id, clusters[cols].assign(run_id=run_id))
     store.replace_run_rows(con, "paper_cluster", run_id,
                            assign.drop(columns="year").assign(run_id=run_id))
@@ -427,6 +640,9 @@ def build_core(con, run_id: str, p: RunParams, skip_labels: bool = False,
         "pm_cells": int(len(pm.groupby(["alpha", "problem_cluster", "method_cluster"])) if not pm.empty else 0),
         "corpus_citation_edges": int(len(edges)),
         "author_year_rows": int(len(ay)), "label_spend_usd": spend,
+        "merged_clusters": int((clusters.kind == "merged").sum()),
+        "generic_clusters": int(clusters.is_generic.fillna(False).sum()),
+        "consolidation_spend_usd": consolidation_spend,
     }
 
 

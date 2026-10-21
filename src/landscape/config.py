@@ -114,6 +114,14 @@ class LabelParams:
     concurrency: int = 16
     label_fine: bool = False  # fine clusters get c-TF-IDF terms only unless set
     llm_spend_cap_usd: float = 2.00
+    # the cluster catalogue review (merge / generic decisions) needs a stronger model than labelling: the
+    # flash/pro models merged categories whose differences they described in the same answer
+    consolidate_model: str = "anthropic/claude-sonnet-5.5"
+    consolidate_spend_cap_usd: float = 5.00
+    # after the embedding merge, an LLM maps each tag onto a more frequent synonym (see 04-embeddings.md)
+    canonicalize_tags: bool = False
+    tag_candidates: int = 8  # nearest more-frequent tags shown per tag
+    tag_candidate_min_cos: float = 0.75
 
 
 @dataclass
@@ -147,6 +155,17 @@ class ClusterParams:
     )
     gloss_alphas: list = field(default_factory=lambda: [0.0, 0.3, 0.5, 0.8])
     seed_values: list | None = None  # user override for the 5 Leiden seeds
+    # Consolidation (see docs/features/05-core-objects.md). drop_boilerplate removes statements such as
+    # "no specific limitation is stated" before the graph is built. consolidate sends each clustering's whole
+    # catalogue to labels.consolidate_model, which names same-category groups to merge and flags too-generic
+    # categories (is_generic; their papers are unassigned only with drop_generic). A merge also needs the
+    # pair's centroid cosine in the top (1 - merge_pair_quantile) of sibling pairs.
+    drop_boilerplate: bool = False
+    consolidate: bool = False
+    drop_generic: bool = False
+    merge_pair_quantile: float = 0.75
+    # coarse clusters are broad by construction; reviewing them drops whole umbrellas of real work
+    consolidate_levels: list = field(default_factory=lambda: ["medium", "fine"])
 
 
 @dataclass

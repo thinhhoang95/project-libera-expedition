@@ -75,10 +75,17 @@ CREATE TABLE IF NOT EXISTS paper_cluster (
 );
 -- raw_cluster_id keeps membership of unstable clusters for review (cluster_id is NULL there)
 ALTER TABLE paper_cluster ADD COLUMN IF NOT EXISTS raw_cluster_id VARCHAR;
--- kind: stable | hub | unstable; hubs keep their papers and are reported separately
+-- kind: stable | hub | unstable | merged | generic; hubs keep their papers and are reported separately
 ALTER TABLE clusters ADD COLUMN IF NOT EXISTS kind VARCHAR;
 ALTER TABLE clusters ADD COLUMN IF NOT EXISTS coherence DOUBLE;
 ALTER TABLE clusters ADD COLUMN IF NOT EXISTS centrality DOUBLE;
+-- consolidation: kind 'merged' (papers moved to merged_into); is_generic flags a too-vague category (kind
+-- 'generic', papers unassigned, only with ClusterParams.drop_generic); note = the reviewer's reason
+ALTER TABLE clusters ADD COLUMN IF NOT EXISTS merged_into VARCHAR;
+ALTER TABLE clusters ADD COLUMN IF NOT EXISTS consolidation_note VARCHAR;
+ALTER TABLE clusters ADD COLUMN IF NOT EXISTS is_generic BOOLEAN;
+-- merged_by: 'embedding' (normalize_tags) or 'llm' (canonicalize_tags_llm); NULL when the tag is canonical
+ALTER TABLE tag_vocab ADD COLUMN IF NOT EXISTS merged_by VARCHAR;
 CREATE TABLE IF NOT EXISTS year_totals (
     run_id VARCHAR, facet VARCHAR, year INTEGER, n INTEGER
 );

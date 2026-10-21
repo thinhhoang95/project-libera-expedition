@@ -43,13 +43,53 @@ job does the following:
 7. **Colors.** One color per cluster, assigned once per run (golden-angle hues), stored in
    `clusters.color`.
 
+8. **Consolidation (off by default).** The extraction model sees one abstract at a time and the
+   clustering never compares categories by meaning, so the finished catalogue can hold the same
+   category twice, or categories too vague to be useful. With `ClusterParams.consolidate`, each
+   medium and fine clustering (`consolidate_levels`) gets one review call to
+   `LabelParams.consolidate_model` (Claude Sonnet 5.5). The call sees the whole catalogue: every
+   stable or hub cluster with its size, c-TF-IDF terms, the 5 statements closest to its centroid,
+   and the run's seed titles as the corpus's central topic. It returns:
+   - **merge** groups. A group merges into its largest member, and the absorbed cluster is kept as
+     `kind = 'merged'` with `merged_into`. A group is skipped when the reviewer names a difference
+     that would keep its members apart. A member joins only if its centroid cosine to the survivor
+     is in the top 25% of sibling pairs (`merge_pair_quantile`).
+   - **generic** flags: boilerplate, a genre without a subject, or a catch-all. Flagged clusters get
+     `is_generic = true` and keep their papers. A flag is skipped when the reviewer names a shared
+     subject. Only with `drop_generic` do they become `kind = 'generic'` with their papers unassigned.
+
+   The reviewer's reason goes to `consolidation_note`. Cluster ids follow the raw partition, so a
+   cluster keeps its id with or without consolidation. `drop_boilerplate` separately removes
+   limitation statements such as "no specific limitation is stated" or a short "future research is
+   discussed" before the graph is built (32 on the pilot).
+
+   Pilot review (2026-10-21, ~$0.25 for 15 calls). The cheaper `deepseek-v4-flash/pro` merged
+   categories while describing how they differed in the same answer, so merging uses Sonnet. Sonnet
+   found no true topic duplicates, including the two "Distributionally Robust Optimization" problem
+   hubs, which it judged distinct. It proposed merges only among boilerplate clusters ("simulation
+   results show effectiveness" + "case studies show effectiveness"). It flagged 3–17 clusters per
+   facet as generic: about a third of result papers are validation or "outperforms state-of-the-art"
+   boilerplate, plus surveys spanning unrelated topics, a textbook and crystal-structure deposits.
+   Reviewing coarse clusters flagged whole umbrellas of real work, which is why coarse is excluded.
+   Without the seed titles, it flagged the corpus's own DRO core as "generic".
+
+   `dro-pilot` runs with `consolidate = true` since 2026-10-21 ($0.59 for the build). Against a
+   rebuild from the same papers and settings without it, the run has 6 merges: result-facet
+   validation boilerplate at medium and fine, plus two Wasserstein-DRO method clusters at α 0.5 fine.
+   It also has 67 clusters flagged generic. Medium assignments are identical except in the result
+   facet, where 6.8% of papers moved. Signals changed only where they use result clusters: the two
+   absorbed validation clusters had ranked #2–3 in shrinking directions and #4 in emerging clusters.
+   Signals do not read `is_generic` yet, so flagged clusters still take 2–6 of the top-10 slots in
+   the emerging and direction lists.
+
 Cluster ids are readable: `{facet}:{alpha}:{resolution}:{rank}`, for example
 `problem:0.3:medium:004`, where the rank is by cluster size.
 
 Outputs:
 
 - `clusters(run_id, cluster_id, facet, resolution, alpha, label, description, top_terms,
-  stability, is_stable, size, parent_cluster_id, color, time_bucket_years, label_model)`
+  stability, is_stable, kind, coherence, centrality, size, parent_cluster_id, color,
+  time_bucket_years, label_model, merged_into, is_generic, consolidation_note)`
 - `paper_cluster(run_id, paper_id, facet, resolution, alpha, cluster_id, sim_to_centroid)`
 - `data/projects/<run>/vectors/cluster_centroids_{run_id}.parquet` (768-d)
 

@@ -235,10 +235,107 @@ def normalize_tags(con, run_id: str, embedder: Embedder, model_id: str, prompt_v
                     break
             if best == i:
                 canon_idx.append(i)
-            rows.append((run_id, facet, tag, df.tag[best], int(df.n[i]), best_sim))
+            rows.append((run_id, facet, tag, df.tag[best], int(df.n[i]), best_sim,
+                         "embedding" if best != i else None))
         df["canonical"] = [r[3] for r in rows[-len(df):]]
         out[facet] = {"distinct": len(df), "canonical": int(df.canonical.nunique())}
     con.execute("DELETE FROM tag_vocab WHERE run_id = ?", [run_id])
     if rows:
-        con.executemany("INSERT INTO tag_vocab VALUES (?, ?, ?, ?, ?, ?)", rows)
+        con.executemany("""INSERT INTO tag_vocab (run_id, facet, tag, canonical, n, sim_to_canonical, merged_by)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""", rows)
+    return out
+
+
+TAG_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["mappings"],
+    "properties": {"mappings": {"type": "array", "items": {
+        "type": "object", "additionalProperties": False, "required": ["id", "canonical"],
+        "properties": {"id": {"type": "integer"}, "canonical": {"type": "string"}}}}},
+}
+TAG_PROMPT = """You clean a vocabulary of "{kind}" tags extracted from research papers. Each numbered tag below
+comes with candidate tags that are more common in the same corpus. For each tag return the candidate that names
+the same concept in different words (synonym, abbreviation, spelling, word order, singular or plural), or ""
+when none does. Never map a tag to a broader, narrower or merely related concept: "robust optimization" is not
+"distributionally robust optimization", and "chance-constrained programming" is not "stochastic programming".
+
+{items}"""
+
+
+async def _map_tags(batches: list[tuple[str, str]], lp) -> tuple[list[dict], float]:
+    import asyncio
+
+    from .llm import LLMBudgetExceeded, OpenRouter, quantizations_for
+
+    client = OpenRouter(lp.model, quantizations_for(lp.model), lp.concurrency, lp.llm_spend_cap_usd)
+    out: list[dict] = []
+
+    async def one(kind, items):
+        try:
+            obj, _, err = await client.chat_json(TAG_PROMPT.format(kind=kind, items=items), TAG_SCHEMA,
+                                                 "tag_map", max_tokens=2000)
+        except LLMBudgetExceeded:
+            return
+        if obj:
+            out.extend(obj["mappings"])
+        else:
+            log.warning("tag mapping failed: %s", err)
+
+    try:
+        await asyncio.gather(*(one(k, it) for k, it in batches))
+    finally:
+        await client.close()
+    return out, client.spent
+
+
+def canonicalize_tags_llm(con, run_id: str, embedder: Embedder, lp, batch: int = 30) -> dict:
+    """Second tag pass, run after normalize_tags once the whole vocabulary is known. Canonicals are visited by
+    frequency; each is shown its nearest more frequent canonicals (cosine >= lp.tag_candidate_min_cos, word
+    sets neither subset nor superset) and the label model picks a synonym among them or none. Chains are
+    followed to their most frequent end."""
+    import asyncio
+
+    vocab = con.execute("SELECT * FROM tag_vocab WHERE run_id = ?", [run_id]).df()
+    if vocab.empty:
+        return {}
+    out, spend = {}, 0.0
+    for facet, grp in vocab.groupby("facet"):
+        canon = (grp.groupby("canonical").n.sum().reset_index()
+                 .sort_values(["n", "canonical"], ascending=[False, True]).reset_index(drop=True))
+        tags = canon.canonical.tolist()
+        v = embedder.encode(tags, show_progress=False)
+        toks = [_tokens(t) for t in tags]
+        jobs, cand_of = [], {}
+        for i in range(1, len(tags)):
+            sims = v[:i] @ v[i]
+            cands = [int(j) for j in np.argsort(-sims)[:lp.tag_candidates]
+                     if sims[j] >= lp.tag_candidate_min_cos and not (toks[i] < toks[j] or toks[j] < toks[i])]
+            if cands:
+                cand_of[i] = cands
+                jobs.append(f'{i}. "{tags[i]}" | candidates: ' + "; ".join(f'"{tags[j]}"' for j in cands))
+        kind = facet.replace("_", " ")
+        batches = [(kind, "\n".join(jobs[k:k + batch])) for k in range(0, len(jobs), batch)]
+        maps, spent = asyncio.run(_map_tags(batches, lp))
+        spend += spent
+        parent = {}
+        for m in maps:
+            i, c = m["id"], m["canonical"].strip().lower()
+            if i in cand_of and c:
+                j = next((j for j in cand_of[i] if tags[j] == c), None)
+                if j is not None:
+                    parent[i] = j
+        root = {}
+        for i in parent:
+            r, seen = i, set()
+            while r in parent and r not in seen:
+                seen.add(r)
+                r = parent[r]
+            root[tags[i]] = tags[r]
+        if root:
+            con.execute("""UPDATE tag_vocab SET canonical = m.root, merged_by = 'llm', sim_to_canonical = NULL
+                           FROM (SELECT unnest(?) AS old, unnest(?) AS root) m
+                           WHERE tag_vocab.run_id = ? AND tag_vocab.facet = ? AND tag_vocab.canonical = m.old""",
+                        [list(root), list(root.values()), run_id, facet])
+        out[facet] = {"canonical_before": len(tags), "canonical_after": len(tags) - len(root),
+                      "shown_to_llm": len(jobs)}
+    out["spend_usd"] = spend
     return out

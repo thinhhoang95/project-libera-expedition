@@ -19,6 +19,11 @@ class LLMBudgetExceeded(RuntimeError):
     pass
 
 
+def quantizations_for(model: str) -> list[str] | None:
+    """Precision filter for open-weight models; closed models' endpoints report no quantization."""
+    return None if model.startswith(("anthropic/", "openai/", "google/gemini")) else ["fp8", "bf16", "fp16", "fp32"]
+
+
 class OpenRouter:
     def __init__(self, model: str, quantizations: list[str] | None, concurrency: int,
                  spend_cap_usd: float):
@@ -57,6 +62,10 @@ class OpenRouter:
             "reasoning": {"enabled": False},
             "usage": {"include": True},
         }
+        if self.model.startswith("anthropic/"):
+            # Claude 5.x endpoints take no temperature and cannot disable reasoning
+            body.pop("temperature")
+            body["reasoning"] = {"effort": "low"}
         cost_total, last_err = 0.0, None
         for parse_try in range(2):  # retry malformed JSON once
             data = None

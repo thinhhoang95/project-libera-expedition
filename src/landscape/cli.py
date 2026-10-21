@@ -157,13 +157,16 @@ def cmd_qa(a, con):
 
 
 def cmd_embed(a, con):
-    from .embed import Embedder, embed_facets, normalize_tags
+    from .embed import Embedder, canonicalize_tags_llm, embed_facets, normalize_tags
 
     p = _params(con, a.run_id)
     emb = Embedder(p.embedding)
     _set_model_version(con, a.run_id, "embedding", emb.version)
     out = embed_facets(con, a.run_id, emb, p.extraction.model, p.extraction.prompt_version)
     out["tags"] = normalize_tags(con, a.run_id, emb, p.extraction.model, p.extraction.prompt_version)
+    if p.labels.canonicalize_tags:
+        out["tags_llm"] = canonicalize_tags_llm(con, a.run_id, emb, p.labels)
+        _add_spend(con, a.run_id, "llm_tags", out["tags_llm"].get("spend_usd", 0.0))
     print(json.dumps(out, indent=2))
 
 
@@ -172,8 +175,11 @@ def cmd_core(a, con):
 
     p = _params(con, a.run_id)
     _set_model_version(con, a.run_id, "labels", p.labels.model)
+    if p.clusters.consolidate:
+        _set_model_version(con, a.run_id, "consolidation", p.labels.consolidate_model)
     stats = build_core(con, a.run_id, p, skip_labels=a.skip_labels)
     _add_spend(con, a.run_id, "llm_labels", stats.get("label_spend_usd", 0.0))
+    _add_spend(con, a.run_id, "llm_consolidation", stats.get("consolidation_spend_usd", 0.0))
     print(json.dumps(stats, indent=2, default=str))
 
 

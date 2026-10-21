@@ -83,6 +83,20 @@ Pilot result: 2,056 → 1,261 problem classes and 2,460 → 1,621 method familie
 at the edges are still wrong (for example "distributed optimization" → DRO). They are meant to
 be reviewed in the facet review view, which is not built yet.
 
+### LLM tag pass (off by default)
+
+`canonicalize_tags_llm` (`LabelParams.canonicalize_tags`) is a second pass that runs once the whole
+vocabulary is known. Canonical tags are visited by frequency. Each one is shown its 8 nearest more
+frequent canonicals (cosine ≥ 0.75, no subset or superset word sets), and the label model picks a
+synonym or none. Merges are written to `tag_vocab` with `merged_by = 'llm'`; the embedding merges are
+marked `'embedding'`.
+
+On the pilot (2026-10-21, `deepseek-v4-pro`) it merged only 22 method and 28 problem tags, and most of
+those merges were wrong: the tag was mapped to a broader or merely related one ("grey wolf optimization"
+→ "metaheuristic optimization", "expectation maximization" → "maximum likelihood estimation"). The pilot
+vocabulary was restored to the embedding merge. Most tags are not hidden synonyms anyway: 1,082 of 1,621
+method canonicals occur once. Keep the pass off unless it is run with a stronger model and checked.
+
 ## Pilot run results
 
 See [pilot-run-dro.md](pilot-run-dro.md).
