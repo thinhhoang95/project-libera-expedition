@@ -18,6 +18,7 @@ Last updated 2026-10-21. Read this first, then `README.md` and `docs/features/`.
 | 8b Signal-improvement experiments (exp1–10, prospective snapshot) | done | `08b-signal-experiments.md`, `findings-portfolio.md` |
 | 8c Research lab (sampling decomposition, alias-aware bridges, underconnected communities; Codex) | done | `08c-research-lab.md` |
 | 9 Product portfolio: Start here, My paper, `landscape external / portfolio / my-paper` | done | `09-portfolio.md` |
+| 10 Orientation experiments (entry strategies, reading paths, durable ideas) | experiments done; product not built | `10-orientation-experiments.md` |
 
 The pilot run is `dro-pilot` (seed: Esfahani & Kuhn, Wasserstein DRO, DOI
 10.1007/s10107-017-1172-1): 5,410 papers, total spend about $1.80 so far (about $1.10 of it the
