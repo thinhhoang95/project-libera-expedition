@@ -18,6 +18,31 @@ most likely to be warm to a paper, and the opportunities around it): see
 [09-portfolio.md](docs/features/09-portfolio.md). What each view is backed by is in the
 [findings portfolio](docs/features/findings-portfolio.md); every experiment is in the Experiments view.
 
+## Portfolio products
+
+Each product is a result from the experiments, placed in the explorer by its evidence. **Use** beat
+its baselines on the pilot corpus; **Use with care** has known weaknesses and shows a warning;
+**Describe** helps understanding but does not predict. Details, numbers and the dropped results are
+in the [findings portfolio](docs/features/findings-portfolio.md).
+
+| Product | What it gives you | Verdict | Where |
+| --- | --- | --- | --- |
+| Papers to bring in (and hidden gems) | Papers a community is likely to adopt, including ones cited once or never | Use | Bridges; My paper; Start here |
+| Communities warm to your paper | The communities most likely to cite a given paper (top 3 hit for 69% of papers vs 25% at random) | Use | My paper |
+| Borrowed ideas | Works imported from outside the field now, and where the field borrows from | Use | Bridges › From outside the field; Start here |
+| Second waves | Established ideas reaching new audiences, as a watchlist | Use | Start here; My paper |
+| Early work | Recent papers the field is likely to read | Use | People › Early work; Start here › Read now |
+| Read this first | A reading path: classics, current method sources and quiet foundations | Use | Start here; My paper |
+| Survey gap | Communities where a survey is missing and would be taken up | Use | Start here; My paper |
+| Tools to learn | Stable methods that keep their share and that newcomers stay with | Use | Start here |
+| Cluster pairs | Limitation → innovation links between clusters, judge-rated | Use with care | Bridges › Cluster pairs |
+| Method transfer | Empty problem × method cells that are likely to fill | Use with care | Grid |
+| Untried applications | Problem × application cells not yet tried | Use with care | My paper |
+| Rising pockets | Local momentum in the map | Use with care | Map layer |
+| Cluster direction | Growing, emerging, niche or dormant badges (off by default) | Use with care | Map; Ranking |
+| Crowding gauge | Whether crowding marks attention or demand for a paper | Describe | My paper |
+| Novelty, people, entry routes | Which papers are different, who plays which role, how newcomers got in | Describe | Map; People |
+
 The [Phase 8c research lab](docs/features/08c-research-lab.md) audits sampling-sensitive
 directions, compares broader bridge lists and semantic ablations, and exposes underconnected
 communities and topic-specific people roles. Open **Research lab** in the explorer for the results.
@@ -74,6 +99,9 @@ uv run landscape my-paper --run-id dro-pilot --doi <DOI>  # any paper: communiti
 uv run landscape score-snapshot --run-id dro-pilot --date 2026-10-21 --months 12  # the frozen prospective test
 uv run python scripts/phase8c/prepare_cutoffs.py --run-id dro-pilot --cutoffs 2019
 uv run landscape research-lab --run-id dro-pilot  # offline diagnostics and experiments, including a complete chronological test
+uv run python scripts/run_experiments.py --step experiments-8b --run-id dro-pilot  # every experiment of a phase: 8, 8b or 10
+uv run python scripts/phase8b/fit_models.py --run-id dro-pilot  # optional: this run's own production models
+uv run python scripts/phase8b/freeze_snapshot.py --run-id dro-pilot  # freeze today's lists for a prospective test
 uv run landscape status   --run-id dro-pilot
 uv run landscape explorer                      # legacy Streamlit explorer (close it before pipeline steps)
 ```
@@ -83,7 +111,7 @@ whole pipeline as one resumable job instead, without the web app:
 
 ```bash
 uv run landscape new-run --run-id my-field --seed-doi <DOI> --name "My field"
-uv run landscape queue --run-id my-field --template map    # or full (adds backtest and research lab)
+uv run landscape queue --run-id my-field --template map    # or full: + backtest, research lab, experiments 1-28
 uv run landscape worker                                    # Ctrl-C interrupts; the next start resumes
 uv run landscape jobs
 ```

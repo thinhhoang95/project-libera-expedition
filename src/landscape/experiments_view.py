@@ -98,8 +98,9 @@ def render_experiments(run: str) -> None:
     idx = experiments.load_index(run)
     backtest = experiments.work_dir(run) / "summary.csv"
     if not idx and not backtest.exists():
-        st.info(f"No experiment results for {run} yet. Build the cutoff runs with `landscape backtest --run-id "
-                f"{run}`, then run the scripts in `scripts/phase8b/` with `--run-id {run}` (see the 08b doc).")
+        st.info(f"No experiment results for {run} yet. Queue the Experiments template (`landscape queue --run-id {run} "
+                f"--template experiments`, then `landscape worker`), or run `scripts/run_experiments.py --step <step> "
+                f"--run-id {run}` after the backtest.")
         return
 
     by_exp: dict[str, list[tuple[str, dict]]] = {}
@@ -141,6 +142,6 @@ def render_experiments(run: str) -> None:
                 df = _filters(df, by, name)
                 _show(df, f"tbl_{name}")
                 st.caption(f"{meta['rows']} rows · saved {meta['saved_at']}")
-            cmds = " · ".join(f"`uv run python scripts/phase8b/{s} --run-id {run}`" for s in SCRIPTS.get(e, []))
+            cmds = " · ".join(f"`uv run python {s} --run-id {run}`" for s in SCRIPTS.get(e, []))
             if cmds:
                 st.caption(f"Re-run: {cmds}")

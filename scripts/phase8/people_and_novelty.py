@@ -1,8 +1,8 @@
 import numpy as np, pandas as pd
 from sklearn.metrics import roc_auc_score
-from landscape import store
-con = store.connect()
-base = "dro-pilot"
+from landscape import experiments
+con = experiments.connect_ro()
+base = experiments.run_arg()
 papers = con.execute("SELECT v.paper_id, p.year, v.route FROM provenance v JOIN papers p USING (paper_id) WHERE v.run_id=?", [base]).df()
 year = papers.set_index("paper_id").year
 edges = con.execute("""SELECT r.citing_id, r.cited_id FROM refs r JOIN provenance a ON a.paper_id=r.citing_id AND a.run_id=?
@@ -52,3 +52,8 @@ for T in (2020, 2021, 2022, 2023):
 r = pd.DataFrame(rows).pivot(index="what", columns="T", values="v")
 r["mean"] = r.mean(axis=1).round(3)
 print(r.to_string())
+experiments.save(base, "phase8_people_novelty", "people_and_novelty", r.rename_axis(columns=None).reset_index(),
+                 title="Brokers and novelty: do they predict future citations",
+                 how_to_read="Per cutoff T and on average: does an author's broker score (spread across communities) "
+                 "pick the top 10% of authors by future corpus citations, overall and within popularity deciles; does "
+                 "a paper's novelty pick the top quarter of its year by 3-year citations (below 0.5 = anti-predictive).")

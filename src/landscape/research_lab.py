@@ -266,6 +266,49 @@ def fitted_scores(train, test, features):
     return model.decision_function(scaler.transform(test[features]))
 
 
+ABLATION_MODELS = {"citations + age": ["lpop", "age"],
+                   "bibliometric base": ["lpop", "lcoup", "age"],
+                   "semantic only": ["prob_sim", "lim_sim3_f"],
+                   "base + semantics": ["lpop", "lcoup", "age", "prob_sim", "lim_sim3_f"]}
+
+
+def semantic_ablation(data, complete_through):
+    """Separate semantic information from received citations and coupling: purged chronological split (train on the
+    cutoffs whose outcomes were complete before the test cutoff, test on the latest cutoff with complete outcomes;
+    2019 -> 2022 on the pilot). Uncited = no received corpus citations at the test cutoff."""
+    test_t = max(t for t in data["T"].unique() if t + 3 <= complete_through)
+    train = data[data["T"] + 3 <= test_t]
+    test = data[data["T"] == test_t].copy()
+    if train.empty:
+        raise ValueError(f"no cutoff with complete outcomes before {test_t}: the ablation needs an earlier cutoff")
+    rows = []
+    for name, features in ABLATION_MODELS.items():
+        test["score"] = fitted_scores(train, test, features)
+        for label, mask in (("all", np.ones(len(test), bool)),
+                            ("cited <=1", test["pop"] <= 1), ("uncited", test["pop"] == 0)):
+            group = test[mask]
+            precision = np.mean([g.nlargest(10, "score").hit.mean() for _, g in group.groupby("X")])
+            rows.append({"train_cutoffs": ",".join(str(int(t)) for t in sorted(train["T"].unique())),
+                         "test_cutoff": int(test_t), "outcome_years": f"{test_t + 1}-{test_t + 3}",
+                         "population": label, "model": name, "n": len(group), "hits": int(group.hit.sum()),
+                         "auc": roc_auc_score(group.hit, group.score), "p@10": precision})
+    return pd.DataFrame(rows)
+
+
+def save_semantic_ablation(run_id, data, complete_through):
+    from . import experiments
+
+    results = semantic_ablation(data, complete_through)
+    results.to_csv(lab_dir(run_id) / "semantic_ablation.csv", index=False)
+    experiments.save(run_id, "lab_semantic_ablation", "paper_bridges", results,
+                     title="Semantic ablation: semantics vs citations and coupling for paper bridges",
+                     how_to_read="Purged chronological test of the paper-bridge candidates: models fitted on the cutoffs "
+                     "whose outcomes were complete before the test cutoff, scored on it. **p@10** per community and "
+                     "**AUC**, for all candidates, those cited at most once and the uncited. Semantics matters where "
+                     "'semantic only' or 'base + semantics' beats the bibliometric base, mostly in the long tail.")
+    return results
+
+
 def select_diverse(group, score, k=10, max_per_method=3):
     """Transparent quota: at most 3 from one method cluster; never fill with quota violations."""
     chosen, counts = [], {}
@@ -470,6 +513,7 @@ def run_lab(con, run_id, params, *, as_of=None, cutoffs=(2019, 2020, 2021, 2022,
     history.to_parquet(path / "bridge_candidates.parquet", index=False)
     metrics.to_csv(path / "bridge_metrics.csv", index=False)
     comparisons.to_parquet(path / "bridge_comparisons.parquet", index=False)
+    print(save_semantic_ablation(run_id, history, end_year).round(4).to_string(index=False))
     # Live review uses completed publication years. Fit only outcomes available by end_year.
     live = bridge_candidates(lab, end_year, live=True)
     train = history[history["T"] + 3 <= end_year]

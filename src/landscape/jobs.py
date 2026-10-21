@@ -97,15 +97,41 @@ CATALOG: list[Step] = [
     Step("prepare-cutoffs", "Cutoff 2019", "8c", ("script", "scripts/phase8c/prepare_cutoffs.py", "--cutoffs", "2019"),
          "The extra cutoff run the research lab's chronological test needs.", optional=True),
     Step("research-lab", "Research lab", "8c", ("cli", "research-lab"),
-         "Sampling decomposition, broader bridge lists, underconnected communities, people by topic.",
-         optional=True),
+         "Sampling decomposition, broader bridge lists, underconnected communities, people by topic, semantic "
+         "ablation.", optional=True),
+    # the experiments behind the portfolio, re-run on this project's corpus (results: Experiments view)
+    Step("experiments-8", "Backtest analyses", "8", ("script", "scripts/run_experiments.py", "--step", "experiments-8"),
+         "Why the recipe's direction and bridge scores were reworked: route robustness, sign-robust features, flow "
+         "penalty, brokers and novelty. Needs the backtest.", optional=True),
+    Step("experiments-8b", "Signal experiments 1–11", "8b",
+         ("script", "scripts/run_experiments.py", "--step", "experiments-8b"),
+         "Paper bridges, early work, pockets, method transfer, beyond rich-get-richer, outside imports, coupling, "
+         "births, uncited uptake, warmth, big labs. Needs the backtest and outside works; OpenAlex yearly counts "
+         "about $0.02 once.", optional=True),
+    Step("experiments-10", "Orientation experiments 12–28", "10",
+         ("script", "scripts/run_experiments.py", "--step", "experiments-10"),
+         "Entry routes, reading paths, durable ideas, survey gaps, quiet foundations, tools, applications, crowding "
+         "and the rest. Needs the 2019 cutoff; two LLM reads, about $0.55 once (cached).", optional=True),
+    Step("fit-models", "Fit this field's models", "8b", ("script", "scripts/phase8b/fit_models.py"),
+         "Paper bridges, early work and community warmth refitted on this project's cutoffs, replacing the pilot's "
+         "models for it. Needs the signal experiments; run Signals and Portfolio afterwards.", optional=True),
+    Step("freeze-snapshot", "Freeze a snapshot", "9", ("script", "scripts/phase8b/freeze_snapshot.py"),
+         "Today's lists and their baselines, hashed, for a prospective test scored at 6, 12 and 24 months. Run "
+         "after the portfolio (and experiment 8 for the birth list).", optional=True),
 ]
 STEPS = {s.name: s for s in CATALOG}
 TEMPLATES = {
-    "full": [s.name for s in CATALOG],
     "map": [s.name for s in CATALOG if not s.optional],
+    # everything except the deliberate choices (own models, freezing); the portfolio is rebuilt at the end so the
+    # artefacts that read experiment tables (entry effects, experiment 12) pick them up
+    "full": [s.name for s in CATALOG if s.name not in ("fit-models", "freeze-snapshot")] + ["portfolio"],
+    "experiments": ["backtest", "prepare-cutoffs", "research-lab", "experiments-8", "experiments-8b", "experiments-10",
+                    "portfolio"],
+    "own-models": ["fit-models", "signals", "portfolio"],
     "refresh": ["signals", "external", "portfolio"],
 }
+TEMPLATE_TITLES = {"map": "Core map", "full": "Full pipeline", "experiments": "Experiments",
+                   "own-models": "This field's models", "refresh": "Refresh portfolio"}
 
 
 def now() -> str:

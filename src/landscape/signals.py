@@ -16,14 +16,13 @@ import asyncio
 import json
 import logging
 from collections import Counter, defaultdict
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from scipy import sparse
 
 from . import embed, store
-from .config import RunParams, SignalParams, run_vectors
+from .config import RunParams, SignalParams, model_file, run_vectors
 from .identity import work_aliases
 from .llm import LLMBudgetExceeded, OpenRouter
 
@@ -674,12 +673,10 @@ def influence(ctx: Ctx, T: int, growth: pd.DataFrame) -> tuple[list[dict], pd.Da
 
 # =============================================================== backtested paper-level signals
 
-MODELS = Path(__file__).with_name("models")
-
-
-def model_score(name: str, X: pd.DataFrame) -> np.ndarray:
-    """Logistic score from a model fitted on the Phase 8 cutoffs (scripts/phase8b/fit_models.py)."""
-    spec = json.loads((MODELS / f"{name}.json").read_text())
+def model_score(name: str, X: pd.DataFrame, run_id: str) -> np.ndarray:
+    """Logistic score from a model fitted on the Phase 8 cutoffs (scripts/phase8b/fit_models.py): the project's own
+    if it has one, else the pilot's (config.model_file)."""
+    spec = json.loads(model_file(run_id, name).read_text())
     Z = (X[spec["features"]].to_numpy(float) - np.array(spec["mean"])) / np.array(spec["scale"])
     return Z @ np.array(spec["coef"]) + spec["intercept"]
 
@@ -765,7 +762,7 @@ def paper_bridges(ctx: Ctx, T: int) -> list[dict]:
             "lpop": np.log1p([pop.get(iid[k], 0) for k in idx]),
             "lcoup": np.log1p(coup[cix[X], idx] * 100), "prob_sim": prob_sim, "lim_sim3_f": lim3,
             "age": [T - ctx.year[iid[k]] for k in idx]})
-        sc = model_score("paper_bridges", feats)
+        sc = model_score("paper_bridges", feats, ctx.run_id)
         # two lists per cluster: most likely adoptions, and hidden gems (cited at most once so far),
         # ranked by the same model (long-tail AUC 0.84 in the backtest)
         order = np.argsort(-sc)
@@ -857,7 +854,7 @@ def early_work(ctx: Ctx, T: int, growth: pd.DataFrame, novelty: pd.Series | None
     X["quant"] = [float(hq.get(x) == "true") for x in recent]
     for c in ("cluster_E", "centrality", "novelty"):
         X[c] = X[c].astype(float).fillna(X[c].astype(float).median())
-    X["score"] = model_score("early_work", X.fillna(0))
+    X["score"] = model_score("early_work", X.fillna(0), ctx.run_id)
     titles = ctx.papers.set_index("paper_id").title
     rows = []
     for rank, r in enumerate(X.sort_values("score", ascending=False).head(sp.top_n).itertuples(), 1):

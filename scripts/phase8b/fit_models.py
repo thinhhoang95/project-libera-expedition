@@ -1,12 +1,17 @@
-"""Fit the production models for the paper-level signals on all backtest cutoffs and save them.
+"""Fit the production models on all backtest cutoffs of a run and put them in production for it.
 
-Inputs: data/projects/<run>/backtest/exp1_pairs.parquet and exp2_papers.parquet (run exp1 / exp2 first; --run-id,
-default dro-pilot).
-Output: src/landscape/models/{paper_bridges,early_work}.json (committed; read by signals.py).
+Inputs: data/projects/<run>/backtest/exp1_pairs.parquet, exp2_papers.parquet and community_warmth_model.json (run the
+Phase 8b experiments first: pipeline step experiments-8b; --run-id, default dro-pilot).
+Output: data/projects/<run>/models/{paper_bridges,early_work,community_warmth}.json, which signals.py and
+portfolio.py then use for the run and its cutoff runs instead of the committed pilot models (config.model_file).
+Run `signals` and `portfolio` afterwards for the lists to use them (template "own-models" does all three).
+With --as-default the models replace the committed defaults in src/landscape/models/ (the pilot's, for every
+project without its own).
 The honest accuracy estimates are the leave-one-cutoff-out numbers from the experiment scripts.
 """
+import argparse
 import json
-from pathlib import Path
+import shutil
 
 import numpy as np
 import pandas as pd
@@ -14,9 +19,19 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
 from landscape import experiments
+from landscape.config import DEFAULT_MODELS, project_dir
 
-OUT = Path("src/landscape/models")
-OUT.mkdir(parents=True, exist_ok=True)
+ap = argparse.ArgumentParser()
+ap.add_argument("--run-id", default="dro-pilot")
+ap.add_argument("--as-default", action="store_true", help="replace the committed models every project falls back to")
+a = ap.parse_args()
+RUN = a.run_id
+WORK = experiments.work_dir(RUN)
+warmth = WORK / "community_warmth_model.json"
+missing = [p.name for p in (WORK / "exp1_pairs.parquet", WORK / "exp2_papers.parquet", warmth) if not p.exists()]
+if missing:
+    raise SystemExit(f"missing {', '.join(missing)} in {WORK}: run the Phase 8b experiments first (step experiments-8b)")
+OUT = DEFAULT_MODELS if a.as_default else project_dir(RUN, "models")
 
 
 def fit(df, feats, target, name, note):
@@ -25,12 +40,11 @@ def fit(df, feats, target, name, note):
     spec = {"name": name, "features": feats, "mean": s.mean_.round(6).tolist(), "scale": s.scale_.round(6).tolist(),
             "coef": m.coef_[0].round(6).tolist(), "intercept": float(m.intercept_[0]),
             "trained_on": sorted(int(t) for t in df["T"].unique()), "n_rows": int(len(df)),
-            "n_positive": int(df[target].sum()), "note": note}
+            "n_positive": int(df[target].sum()), "run": RUN, "note": note}
     (OUT / f"{name}.json").write_text(json.dumps(spec, indent=2))
     print(name, dict(zip(feats, spec["coef"])))
 
 
-WORK = experiments.work_dir(experiments.run_arg())
 d1 = pd.read_parquet(WORK / "exp1_pairs.parquet")
 d1["lpop"] = np.log1p(d1["pop"])
 d1["age"] = d1["T"] - d1["i_year"]
@@ -38,11 +52,16 @@ d1["lcoup"] = np.log1p(d1["coupling"] * 100)
 d1["lim_sim3_f"] = d1.lim_sim3.fillna(d1.prob_sim)
 fit(d1, ["lpop", "lcoup", "prob_sim", "lim_sim3_f", "age"], "hit", "paper_bridges",
     "P(problem cluster X cites innovation paper i within 3 years | not cited yet). "
-    "Leave-one-cutoff-out: p@10 per cluster 0.234 (popularity 0.186, random 0.017), AUC 0.84, long-tail AUC 0.84.")
+    "Leave-one-cutoff-out estimates for this run: Experiments view, experiment 1 (pilot: p@10 per cluster 0.234, "
+    "popularity 0.186, AUC 0.84).")
 
 d2 = pd.read_parquet(WORK / "exp2_papers.parquet")
 feats2 = ["l_cites_so_far", "l_coupling", "l_n_refs", "cluster_E", "centrality", "novelty", "l_n_authors",
           "survey", "theory", "quant"]
 fit(d2, feats2, "hit", "early_work",
     "P(a paper from year T is top-quartile for its year in corpus citations over T+1..T+3), without author fame. "
-    "Leave-one-cutoff-out: AUC 0.815, p@50 0.67 (citations so far 0.62, coupling 0.50, base rate 0.19).")
+    "Leave-one-cutoff-out estimates for this run: Experiments view, experiment 2 (pilot: AUC 0.815, p@50 0.67).")
+
+shutil.copyfile(warmth, OUT / "community_warmth.json")
+print("community_warmth", json.loads(warmth.read_text())["coef"])
+print(f"models for {RUN} -> {OUT}; run `signals` and `portfolio` for the lists to use them")

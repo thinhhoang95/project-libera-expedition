@@ -9,11 +9,11 @@ innovation vs X's problems), limitation similarity, recent closeness (X's recent
 innovations vs i's innovation), community size. A logistic model of all of them is fitted
 leave-one-cutoff-out. Scored *within each paper*: mean AUC across communities, hit@3 (a top-3
 community cites it) and the reciprocal rank of the first warm community, over papers with at least one
-warm community. Fits the production model on all cutoffs to src/landscape/models/community_warmth.json.
+warm community. Fits the production model on all cutoffs to data/projects/<run>/backtest/community_warmth_model.json;
+scripts/phase8b/fit_models.py puts it into production for the run (pipeline step fit-models).
 Needs exp9_realized.py output. Usage: --run-id (default dro-pilot).
 """
 import json
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -91,6 +91,7 @@ spec = {"name": "community_warmth", "features": FEATS, "mean": s.mean_.round(6).
             "prob_sim": "cosine(i innovation, X's mean problem vector), 256-d",
             "lim_sim3_f": "mean of the 3 highest cosines(i innovation, X's non-generic limitations), else prob_sim",
             "sim_recent": "max cosine(i innovation, method/innovation of X's papers from the last 3 years)"}}
-out = Path("src/landscape/models/community_warmth.json")
+spec["run"] = RUN
+out = experiments.work_dir(RUN) / "community_warmth_model.json"  # staged; fit_models.py puts it in production
 out.write_text(json.dumps(spec, indent=2) + "\n")
 print("saved", out, dict(zip(FEATS, spec["coef"])))

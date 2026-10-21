@@ -1,6 +1,6 @@
 # Feature: Signal-improvement experiments (Phase 8b)
 
-Status: done (four experiments; three adopted, one dropped) · Scripts: `scripts/phase8b/` · Production models: `src/landscape/models/{paper_bridges,early_work}.json` (fitted by `scripts/phase8b/fit_models.py`) · Signals: `bridge_paper`, `bridge_paper_gem`, `early_work`, `paper_scores.local_momentum`, item-CF `bridge_method_transfer`
+Status: done (four experiments; three adopted, one dropped) · Scripts: `scripts/phase8b/` · Production models: `src/landscape/models/{paper_bridges,early_work,community_warmth}.json` (the pilot's, the default for every project; `scripts/phase8b/fit_models.py` fits a project's own into `data/projects/<run>/models/`) · Signals: `bridge_paper`, `bridge_paper_gem`, `early_work`, `paper_scores.local_momentum`, item-CF `bridge_method_transfer`
 
 The Phase 8 backtest ([08-backtest.md](08-backtest.md)) showed which recipe signals carry
 information and which do not. Phase 8b tried new ways to make the signals stronger. The rule
@@ -25,7 +25,7 @@ uv run python scripts/phase8b/exp1_evaluate.py
 uv run python scripts/phase8b/exp2_early_work.py      # writes data/projects/<run>/backtest/exp2_papers.parquet
 uv run python scripts/phase8b/exp3_micro_topics.py
 uv run python scripts/phase8b/exp4_method_transfer.py
-uv run python scripts/phase8b/fit_models.py           # refits the two production models on all cutoffs
+uv run python scripts/phase8b/fit_models.py           # after exp10: the run's own production models (--as-default: the committed ones)
 uv run python scripts/phase8b/fetch_counts_by_year.py # exp5 only: OpenAlex yearly counts (~$0.02, cached)
 uv run python scripts/phase8b/exp5_features.py        # writes data/projects/<run>/backtest/exp5_papers.parquet
 uv run python scripts/phase8b/exp5_evaluate.py [logit|hgb] [y_...]
@@ -34,12 +34,17 @@ uv run python scripts/phase8b/exp6_imports.py         # before exp5_features.py,
 uv run python scripts/phase8b/exp7_coupling.py        # coupling vs semantics by stratum
 uv run python scripts/phase8b/exp8_birth.py           # community birth (needs exp6 for borrowing features)
 uv run python scripts/phase8b/exp9_realized.py && uv run python scripts/phase8b/exp9_within_candidate.py
-uv run python scripts/phase8b/exp10_warmth.py         # community warmth; writes models/community_warmth.json
+uv run python scripts/phase8b/exp10_warmth.py         # community warmth; stages backtest/community_warmth_model.json
 uv run python scripts/phase8b/exp11_leaders.py        # big labs: follow-up waves and community entries
 uv run python scripts/phase8b/freeze_snapshot.py      # prospective snapshot (date defaults to today)
 ```
 
 `LANDSCAPE_DB=<copy of data/shared/landscape.duckdb>` lets the scripts run while the explorer holds the lock.
+
+The web app runs all of them in this order as the optional pipeline step `experiments-8b`
+(`uv run python scripts/run_experiments.py --step experiments-8b --run-id <run>`, which resumes after a
+failure). `fit-models` and `freeze-snapshot` are steps of their own
+([11-web-app.md](11-web-app.md#the-job-queue)).
 
 The production models are fitted on all four cutoffs. The honest accuracy estimates are the
 leave-one-cutoff-out numbers below, not the in-sample fit.
@@ -490,8 +495,9 @@ computed within each paper (`exp10_warmth.py`).
 
 - **Content outcome:** problem similarity alone is best (hit@3 0.60 vs 0.40 at random); the full
   model is not better there.
-- **Production:** the model fitted on all cutoffs is saved to `models/community_warmth.json` and
-  served by `landscape portfolio` / `my-paper` ([09-portfolio.md](09-portfolio.md)).
+- **Production:** the model fitted on all cutoffs is staged in `backtest/community_warmth_model.json`.
+  `fit_models.py` puts it in production for the run (or, with `--as-default`, as the committed
+  `models/community_warmth.json`), and it is served by `landscape portfolio` / `my-paper` ([09-portfolio.md](09-portfolio.md)).
 
 ## 11. Do big labs steer the field?
 

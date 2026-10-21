@@ -295,7 +295,9 @@ def main(argv=None):
 
     s = sub.add_parser("queue", help="queue pipeline steps for a project")
     s.add_argument("--run-id", required=True)
-    s.add_argument("--template", choices=["full", "map", "refresh"], default="map")
+    from .jobs import TEMPLATES
+
+    s.add_argument("--template", choices=list(TEMPLATES), default="map")
     s.add_argument("--steps", help="comma-separated step names instead of a template")
     s.set_defaults(fn=None)
 

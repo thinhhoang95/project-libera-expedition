@@ -20,7 +20,6 @@ from .data import (Router, corpus_vectors, embedding_version, ext_vectors, jl, m
                    records, titles)
 
 router = Router()
-WARMTH_SPEC = json.loads((portfolio.MODELS / "community_warmth.json").read_text())
 REASONS = {"lcoup": "cites the same literature", "sim_recent": "its recent work is close to yours",
            "prob_sim": "asks related problems", "lim_sim3_f": "states limitations your work addresses",
            "l_size": "large community"}
@@ -247,9 +246,8 @@ def analysed(p: str) -> list[dict]:
     return sorted(out, key=lambda r: r.get("analysed_at") or "", reverse=True)
 
 
-def _why(row: dict) -> list[str]:
-    z = {f: (row[f] - m) / s * c for f, m, s, c in zip(WARMTH_SPEC["features"], WARMTH_SPEC["mean"],
-                                                         WARMTH_SPEC["scale"], WARMTH_SPEC["coef"])}
+def _why(row: dict, spec: dict) -> list[str]:
+    z = {f: (row[f] - m) / s * c for f, m, s, c in zip(spec["features"], spec["mean"], spec["scale"], spec["coef"])}
     return [REASONS[f] for f, v in sorted(z.items(), key=lambda kv: -kv[1]) if v > 0][:2]
 
 
@@ -270,7 +268,8 @@ def _my_paper(p: str, pid: str, source: str) -> dict:
     cand = W[W["rank"].notna()].sort_values("rank").copy()
     lo, hi = cand.warmth.min(), cand.warmth.max()
     cand["warmth_rel"] = (cand.warmth - lo) / (hi - lo) if hi > lo else 1.0
-    cand["why"] = [_why(r) for r in cand.to_dict("records")]
+    spec = portfolio.model_spec(p, "community_warmth")
+    cand["why"] = [_why(r, spec) for r in cand.to_dict("records")]
     ver = embedding_version(p)
     vecs = rec["vectors"]
     inn, prob = vecs.get("innovation"), vecs.get("problem")

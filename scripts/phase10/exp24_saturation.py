@@ -88,6 +88,7 @@ async def extract():
     new = pd.DataFrame(rows)
     pd.concat([have, new]).to_parquet(OUT, index=False)
     print(f"extracted {len(new)} (total {len(have) + len(new)}), spend ${client.spent:.4f}")
+    print(f"@@spend llm_experiments={client.spent:.6f}")  # scripts/run_experiments.py adds it to the run's spend
 
 
 def analyse():

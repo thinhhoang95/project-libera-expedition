@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { CheckCircle2, Circle, Lock, Play, RefreshCw, Rocket, Sparkles } from "lucide-react";
+import { CheckCircle2, Circle, FlaskConical, Lock, Play, RefreshCw, Rocket, Sigma, Snowflake, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, useApi, type Job, type Project } from "../api";
@@ -14,7 +14,9 @@ type Catalog = { steps: { name: string; label: string; phase: string; about: str
 
 const TEMPLATES = [
   { key: "map", label: "Core map", icon: Rocket, about: "Corpus → facets → communities → map → signals → portfolio. What Start, My paper and Map & grid need." },
-  { key: "full", label: "Full pipeline", icon: Sparkles, about: "Everything, including the backtest cutoffs and the research lab (several hours)." },
+  { key: "full", label: "Full pipeline", icon: Sparkles, about: "The core map, then the backtest cutoffs, the research lab and every experiment, and the portfolio again with their results (several hours; about $0.55 of LLM reads once)." },
+  { key: "experiments", label: "Experiments", icon: FlaskConical, about: "On a built map: the backtest cutoffs, the research lab and experiments 1–28 on this corpus, then the portfolio again. Results in the Experiments view." },
+  { key: "own-models", label: "This field's models", icon: Sigma, about: "Refit paper bridges, early work and community warmth on this project's experiments, then Signals and Portfolio with them (instead of the pilot's models)." },
   { key: "refresh", label: "Refresh portfolio", icon: RefreshCw, about: "Signals, outside works and portfolio again (after reviews or new outside data)." },
 ];
 
@@ -51,11 +53,28 @@ export function StepPicker({ catalog, selected, setSelected, built, wide }: {
 }
 
 function Snapshots({ p }: { p: string }) {
+  const qc = useQueryClient();
   const { data } = useApi<any[]>(`/p/${p}/snapshots`);
-  if (!data?.length) return null;
+  const done = () => qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/jobs") });
+  const freeze = useMutation({ mutationFn: () => api<Job>("/jobs", { method: "POST", json: { project: p, steps: ["freeze-snapshot"] } }), onSuccess: done });
+  const score = useMutation({
+    mutationFn: ({ date, months }: { date: string; months: number }) => api<Job>(`/p/${p}/snapshots/${date}/score`, { method: "POST", json: { months } }),
+    onSuccess: done,
+  });
+  const today = new Date().toISOString().slice(0, 10);
   return (
     <Card title="Frozen snapshots" icon={<Lock className="size-4 text-brand-600" />} subtitle="Prospective test: lists frozen on a date, scored later against what happened">
-      {data.map((s) => (
+      <div className="mb-3 flex flex-col gap-1.5">
+        <button className="btn btn-sm self-start" disabled={freeze.isPending || data?.some((s) => s.date === today)} onClick={() => freeze.mutate()}>
+          <Snowflake className="size-3.5" /> Freeze today's lists
+        </button>
+        <span className="muted text-[12px] leading-snug">
+          Freezes the current lists with their baselines and hashes them (manifest in <code>docs/snapshots/</code>, for git). Run it after the portfolio, and after the signal experiments for the birth list. One snapshot a day.
+        </span>
+        {freeze.data && <span className="muted text-[12px]">Queued job #{freeze.data.id}.</span>}
+        {freeze.error && <ErrorBox error={freeze.error} />}
+      </div>
+      {(data ?? []).map((s) => (
         <div key={s.date} className="text-[12.5px]">
           <div className="flex items-center gap-2">
             <span className="h-title text-[13.5px]">{s.date}</span>
@@ -72,7 +91,13 @@ function Snapshots({ p }: { p: string }) {
               </li>
             ))}
           </ul>
-          {s.horizons.some((h: any) => h.due_now) && <code className="mt-2 block text-[11.5px]">{s.horizons.find((h: any) => h.due_now).command}</code>}
+          {s.horizons.filter((h: any) => h.due_now).map((h: any) => (
+            <button key={h.months} className="btn btn-sm mt-2 mr-2" disabled={score.isPending} onClick={() => score.mutate({ date: s.date, months: h.months })} title={h.command}>
+              <Play className="size-3.5" /> Score at {h.months} months
+            </button>
+          ))}
+          {score.data && <div className="muted mt-1">Queued job #{score.data.id}.</div>}
+          {score.error && <ErrorBox error={score.error} />}
           {s.scored.length > 0 && <div className="muted mt-1">Scored: {s.scored.join(", ")}</div>}
         </div>
       ))}

@@ -21,7 +21,8 @@ Run it after `core` and `viz`. It also writes the explorer's `viz_cluster_year` 
 Phase 8b added backtested signals: paper bridges, early work, item-CF method transfer and
 local momentum. They are described below, and their evidence is in
 [08b-signal-experiments.md](08b-signal-experiments.md). Two of them score with logistic models
-saved in `src/landscape/models/` and read through `model_score()`.
+read through `model_score()`: a project's own in `data/projects/<project>/models/` when the `fit-models` step has
+run for it, else the pilot's committed in `src/landscape/models/` (`config.model_file`).
 
 ## Hub clusters (reported separately, not dropped)
 

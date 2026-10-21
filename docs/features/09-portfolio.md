@@ -1,6 +1,6 @@
 # Feature: Product portfolio (Start here, My paper)
 
-Status: implemented · Code: `src/landscape/portfolio.py`, `external.py`, `portfolio_view.py` · CLI: `landscape external`, `landscape portfolio`, `landscape my-paper` · Models: `src/landscape/models/community_warmth.json` · Evidence: [findings-portfolio.md](findings-portfolio.md), [08b-signal-experiments.md](08b-signal-experiments.md)
+Status: implemented · Code: `src/landscape/portfolio.py`, `external.py`, `portfolio_view.py` · CLI: `landscape external`, `landscape portfolio`, `landscape my-paper` · Models: `src/landscape/models/community_warmth.json` (the pilot's; a project's own after the `fit-models` step) · Evidence: [findings-portfolio.md](findings-portfolio.md), [08b-signal-experiments.md](08b-signal-experiments.md)
 
 This phase turns the backtested results into a product for someone who wants to understand a field
 and find opportunities for their own work. Each result's place in the product follows its evidence:

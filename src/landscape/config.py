@@ -47,6 +47,17 @@ def run_vectors(run_id: str) -> Path:
     """Run-level vectors (cluster centroids, author-year centroids), cutoff runs included."""
     return project_dir(run_id, "vectors")
 
+
+# The production models (paper bridges, early work, community warmth). The committed ones were fitted on the
+# pilot and serve every project; `scripts/phase8b/fit_models.py` (pipeline step "fit-models") fits a project's
+# own into projects/<project>/models/, which then win for that project and its cutoff runs.
+DEFAULT_MODELS = Path(__file__).with_name("models")
+
+
+def model_file(run_id: str, name: str) -> Path:
+    own = project_dir(run_id, "models", mkdir=False) / f"{name}.json"
+    return own if own.exists() else DEFAULT_MODELS / f"{name}.json"
+
 # Project env files win over the shell environment: a machine-wide OPENAI_API_KEY must not
 # shadow the OpenRouter key kept in .env.local.
 _ENV = {**os.environ, **dotenv_values(ROOT / ".env"), **dotenv_values(ROOT / ".env.local")}

@@ -120,5 +120,81 @@ class QueueTest(unittest.TestCase):
             w.shutdown()
 
 
+class CatalogTest(unittest.TestCase):
+    """The catalogue reaches every experiment script, and every saved experiment has a step and a decision."""
+
+    def test_every_script_step_and_experiment_script_exists(self):
+        from landscape import experiments
+
+        for s in jobs.CATALOG:
+            if s.command[0] == "script":
+                self.assertTrue((config.ROOT / s.command[1]).exists(), s.command[1])
+        for step, path, _, exps in experiments.RUNS:
+            self.assertIn(step, jobs.STEPS)
+            self.assertTrue((config.ROOT / path).exists(), path)
+            for e in exps:
+                self.assertIn(e, experiments.PILOT_DECISIONS)
+        on_disk = {str(p.relative_to(config.ROOT)) for d in ("phase8", "phase8b", "phase10")
+                   for p in (config.ROOT / "scripts" / d).glob("*.py")
+                   if p.name != "common.py" and not p.name.startswith("._")}  # ._*: macOS metadata on non-APFS disks
+        covered = {path for _, path, _, _ in experiments.RUNS} | {
+            s.command[1] for s in jobs.CATALOG if s.command[0] == "script"}
+        # superseded by `landscape external` (a CLI step)
+        self.assertEqual(on_disk - covered, {"scripts/phase8b/external_mine.py"})
+
+    def test_templates_name_known_steps(self):
+        for name, steps in jobs.TEMPLATES.items():
+            self.assertTrue(set(steps) <= set(jobs.STEPS), name)
+            self.assertIn(name, jobs.TEMPLATE_TITLES)
+        self.assertEqual(jobs.TEMPLATES["full"][-1], "portfolio")  # rebuilt after the experiments
+
+    def test_project_models_win_over_the_defaults(self):
+        tmp = Path(tempfile.mkdtemp())
+        with mock.patch.object(config, "PROJECTS", tmp / "projects"):
+            self.assertEqual(config.model_file("demo@T2021", "early_work"), config.DEFAULT_MODELS / "early_work.json")
+            own = config.project_dir("demo", "models") / "early_work.json"
+            own.write_text("{}")
+            self.assertEqual(config.model_file("demo@T2021", "early_work"), own)
+            self.assertEqual(config.model_file("other", "early_work"), config.DEFAULT_MODELS / "early_work.json")
+
+
+class RunExperimentsTest(unittest.TestCase):
+    """scripts/run_experiments.py: runs a step's scripts in order, resumes after a failure, reports spend."""
+
+    def test_resume_after_failure_and_spend(self):
+        import importlib.util
+
+        from landscape import experiments
+
+        spec = importlib.util.spec_from_file_location("run_experiments", config.ROOT / "scripts" / "run_experiments.py")
+        rx = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rx)
+        tmp = Path(tempfile.mkdtemp())
+        log, flag = tmp / "ran.txt", tmp / "fail-once"
+        flag.touch()
+        a, b = tmp / "a.py", tmp / "b.py"
+        a.write_text(f"open({str(log)!r}, 'a').write('a\\n')\n")
+        b.write_text(textwrap.dedent(f"""
+            import os
+            open({str(log)!r}, 'a').write('b\\n')
+            print("@@spend llm_experiments=0.25", flush=True)
+            if os.path.exists({str(flag)!r}):
+                os.remove({str(flag)!r})
+                raise SystemExit(4)
+        """))
+        spent = []
+        with mock.patch.object(config, "PROJECTS", tmp / "projects"), \
+             mock.patch.dict(experiments.STEP_SCRIPTS, {"experiments-test": [(str(a), ()), (str(b), ())]}), \
+             mock.patch.object(rx, "record_spend", lambda run, s: spent.append(s)), \
+             mock.patch("sys.argv", ["run_experiments.py", "--step", "experiments-test", "--run-id", "demo"]):
+            self.assertEqual(rx.main(), 4)
+            state = experiments.results_dir("demo") / ".progress-experiments-test.json"
+            self.assertEqual(json.loads(state.read_text())["done"], [str(a)])
+            self.assertEqual(rx.main(), 0)  # resumes at b
+            self.assertFalse(state.exists())
+        self.assertEqual(log.read_text().split(), ["a", "b", "b"])
+        self.assertEqual(spent, [{"llm_experiments": 0.25}] * 2)
+
+
 if __name__ == "__main__":
     unittest.main()

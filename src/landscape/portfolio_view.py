@@ -19,7 +19,6 @@ import streamlit as st
 
 from . import embed, external, portfolio
 
-WARMTH_SPEC = json.loads((portfolio.MODELS / "community_warmth.json").read_text())
 REASONS = {"lcoup": "cites the same literature", "sim_recent": "its recent work is close to yours",
            "prob_sim": "asks related problems", "lim_sim3_f": "states limitations your work addresses",
            "l_size": "large community"}
@@ -301,9 +300,8 @@ def _paper_record(run: str, q, pid: str) -> dict | None:
             "facets": facets, "vectors": vec, "warmth": rows.to_dict("records"), "refs": refs}
 
 
-def _why(row: dict) -> str:
-    z = {f: (row[f] - m) / s * c for f, m, s, c in zip(WARMTH_SPEC["features"], WARMTH_SPEC["mean"],
-                                                         WARMTH_SPEC["scale"], WARMTH_SPEC["coef"])}
+def _why(row: dict, spec: dict) -> str:
+    z = {f: (row[f] - m) / s * c for f, m, s, c in zip(spec["features"], spec["mean"], spec["scale"], spec["coef"])}
     top = [REASONS[f] for f, v in sorted(z.items(), key=lambda kv: -kv[1]) if v > 0][:2]
     return "; ".join(top) or "no strong signal"
 
@@ -364,7 +362,8 @@ def _render_paper(run, q, paper_card, record, rec) -> None:
     cand = W[W["rank"].notna()].sort_values("rank").copy()
     lo, hi = cand.warmth.min(), cand.warmth.max()
     cand["warmth_rel"] = (cand.warmth - lo) / (hi - lo) if hi > lo else 1.0
-    cand["why"] = [_why(r) for r in cand.to_dict("records")]
+    spec = portfolio.model_spec(run, "community_warmth")
+    cand["why"] = [_why(r, spec) for r in cand.to_dict("records")]
     ev = st.dataframe(pd.DataFrame({"rank": cand["rank"].astype(int), "community": cand.community,
                                     "warmth": cand.warmth_rel, "content fit": cand.content_fit.round(3), "why": cand.why}),
                       hide_index=True, width="stretch", height=320, on_select="rerun", selection_mode="single-row",

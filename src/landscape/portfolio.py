@@ -29,10 +29,9 @@ from sklearn.preprocessing import StandardScaler
 
 from . import embed, external
 from .backtest import Assigner
-from .config import RunParams, project_dir
+from .config import RunParams, model_file, project_dir
 
 log = logging.getLogger(__name__)
-MODELS = Path(__file__).parent / "models"
 ALPHA, RES = 0.5, "medium"          # the communities the bridges and warmth are defined on
 DIM = 256
 
@@ -41,8 +40,13 @@ def out_dir(run_id: str) -> Path:
     return project_dir(run_id, "portfolio")
 
 
-def _model_score(name: str, X: pd.DataFrame) -> np.ndarray:
-    spec = json.loads((MODELS / f"{name}.json").read_text())
+def model_spec(run_id: str, name: str) -> dict:
+    """The project's own model if `fit-models` has run for it, else the pilot's."""
+    return json.loads(model_file(run_id, name).read_text())
+
+
+def _model_score(name: str, X: pd.DataFrame, run_id: str) -> np.ndarray:
+    spec = model_spec(run_id, name)
     z = (X[spec["features"]].to_numpy(dtype=float) - np.array(spec["mean"])) / np.array(spec["scale"])
     return z @ np.array(spec["coef"]) + spec["intercept"]
 
@@ -140,7 +144,7 @@ class Warmth:
                                      "lcoup": np.log1p(coup[:, j] * 100), "prob_sim": prob[:, j],
                                      "lim_sim3_f": lim[:, j], "sim_recent": rec[:, j].clip(-1)}))
         X = pd.concat(out, ignore_index=True)
-        X["warmth"] = _model_score("community_warmth", X)
+        X["warmth"] = _model_score("community_warmth", X, f.run)
         X["content_fit"] = X.prob_sim
         return X
 

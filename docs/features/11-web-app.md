@@ -60,16 +60,49 @@ All paths come from `config.project_dir(run_id, ...)` and `config.run_vectors(ru
 
 A job is an ordered list of steps. Each step is one `landscape <command> --run-id <project>` (or an
 analysis script) run in its own process. The step catalogue in `jobs.py` follows the README pipeline:
-expand, extract, semantic, extract (for the additions), embed, core, viz, signals, external, portfolio,
-then, optionally, backtest, cutoff 2019 and research-lab.
+expand, extract, semantic, extract (for the additions), embed, core, viz, signals, external, portfolio.
+The optional steps come after it:
+
+| Step | What it runs |
+| --- | --- |
+| `backtest`, `prepare-cutoffs` | the cutoff runs 2020–2023, and 2019 for the chronological tests |
+| `research-lab` | the Phase 8c lab, ending with the semantic ablation |
+| `experiments-8` | the Phase 8 backtest analyses (`scripts/phase8/`) |
+| `experiments-8b` | signal experiments 1–11 (`scripts/phase8b/`); OpenAlex yearly counts, about $0.02 once |
+| `experiments-10` | orientation experiments 12–28 (`scripts/phase10/`); two LLM reads, about $0.55 once |
+| `fit-models` | refits paper bridges, early work and community warmth on this project (below) |
+| `freeze-snapshot` | freezes today's lists for the prospective test |
+
+The three experiment steps run `scripts/run_experiments.py --step <step>`. It takes the step's scripts
+in order from `experiments.RUNS` and runs each one in its own process. It records the scripts already
+done in `backtest/experiments/.progress-<step>.json`, so a failed or interrupted step resumes at the
+first unfinished script. It adds the spend that experiments 24 and 28 report to the run's spend. Every
+table lands in the Experiments view. That page also queues a step whose experiments have no results yet,
+or re-runs the step behind any table.
+
+**Models.** Paper bridges, early work and community warmth are logistic models.
+- The committed models in `src/landscape/models/` were fitted on the pilot and serve every project by
+  default.
+- `fit-models` fits a project's own from its signal experiments into `projects/<project>/models/`.
+  Those then win for that project and its cutoff runs (`config.model_file`).
+- `scripts/phase8b/fit_models.py --as-default` replaces the committed defaults instead.
+
+**Snapshots.**
+- The Pipeline page's *Frozen snapshots* card queues `freeze-snapshot`, at most once a day.
+- When a horizon is due, the card queues `landscape score-snapshot` for that horizon
+  (`POST /p/<project>/snapshots/<date>/score`).
 
 Templates:
 
 | Template | Steps |
 | --- | --- |
 | Core map | everything except the optional steps: enough for Start here, My paper and Map & grid |
-| Full pipeline | all steps |
+| Full pipeline | the core map, then backtest, cutoff 2019, research lab and the three experiment steps, then the portfolio again so it picks up the experiments' tables (experiment 12's entry effects) |
+| Experiments | the same without the core map, for a project whose map is built |
+| This field's models | fit-models, signals, portfolio |
 | Refresh portfolio | signals, external, portfolio |
+
+Neither Full pipeline nor Experiments refits the models or freezes a snapshot. Both are deliberate choices.
 
 Single steps can be queued from the Pipeline page or `landscape queue --steps a,b`.
 

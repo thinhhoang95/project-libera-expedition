@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import jobs, portfolio, projects, replica
+from .. import experiments, jobs, portfolio, projects, replica
 from ..config import ROOT, RunParams, project_dir
 from ..research_lab import lab_dir
 from .data import Router, _CACHE, DB, jl, memo, q
@@ -127,10 +127,12 @@ def _artefacts(p: str) -> dict:
                              (SELECT count(*) FROM clusters WHERE run_id = ?),
                              (SELECT count(*) FROM viz_layout WHERE run_id = ?),
                              (SELECT count(*) FROM signals WHERE run_id = ?),
-                             (SELECT count(*) FROM runs WHERE run_id LIKE ? || '@T%')""", (p,) * 6 + (p,))
-        papers, semantic, facets, clusters, layout, signals, cutoffs = r
+                             (SELECT count(*) FROM runs WHERE run_id LIKE ? || '@T%'),
+                             (SELECT count(*) FROM clusters WHERE run_id = ? || '@T2019')""", (p,) * 8)
+        papers, semantic, facets, clusters, layout, signals, cutoffs, t2019 = r
         have.update(expand=papers, semantic=semantic, extract=facets, core=clusters, viz=layout, signals=signals,
                     backtest_runs=cutoffs)
+        have["prepare-cutoffs"] = bool(t2019)
     except HTTPException:
         pass
     have["embed"] = bool(have.get("core"))
@@ -138,6 +140,12 @@ def _artefacts(p: str) -> dict:
     have["portfolio"] = (project_dir(p, "portfolio", mkdir=False) / "summary.json").exists()
     have["backtest"] = (project_dir(p, "backtest", mkdir=False) / "summary.csv").exists()
     have["research-lab"] = (lab_dir(p) / "summary.json").exists()
+    # experiment steps: how many of their experiments have saved tables for this project
+    saved = {m["experiment"] for m in experiments.load_index(p).values()}
+    for step in experiments.STEP_SCRIPTS:
+        have[step] = len({e for e, s in experiments.STEP_OF.items() if s == step} & saved)
+    have["fit-models"] = any(project_dir(p, "models", mkdir=False).glob("*.json"))
+    have["freeze-snapshot"] = any(f for f in (ROOT / "docs" / "snapshots").glob(f"{p}-*.json") if not f.name.startswith("._"))
     return have
 
 
@@ -291,7 +299,7 @@ def create_job(body: NewJob) -> dict:
     if not names or bad:
         raise HTTPException(422, f"Unknown steps: {bad}")
     con = jobs.connect()
-    title = body.title or (f"{body.template.capitalize()} pipeline" if body.template and not body.steps
+    title = body.title or (jobs.TEMPLATE_TITLES.get(body.template, body.template) if body.template and not body.steps
                            else " → ".join(jobs.STEPS[n].label for n in names) if len(names) <= 3
                            else f"{len(names)} steps")
     return jobs.job_dict(con, jobs.enqueue(con, body.project, names, title=title))
@@ -332,6 +340,23 @@ def analyse(p: str, body: dict) -> dict:
     jid = jobs.enqueue(con, p, [("my-paper", "Analyse a paper by DOI",
                                  ["cli", "my-paper", "--run-id", p, "--doi", doi, "--read-only"])],
                        title=f"Analyse {doi}", kind="my-paper", lane="quick", params={"doi": doi})
+    return jobs.job_dict(con, jid)
+
+
+class ScoreSnapshot(BaseModel):
+    months: int = Field(12, ge=1, le=120)
+
+
+@router.post("/p/{p}/snapshots/{day}/score")
+def score_snapshot(p: str, day: str, body: ScoreSnapshot) -> dict:
+    """Queue the scoring of a frozen snapshot at one horizon (`landscape score-snapshot`)."""
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", day) or not (ROOT / "docs" / "snapshots" / f"{p}-{day}.json").exists():
+        raise HTTPException(404, f"No frozen snapshot of {p} on {day}")
+    con = jobs.connect()
+    jid = jobs.enqueue(con, p, [("score-snapshot", f"Score the {day} snapshot at {body.months} months",
+                                 ["cli", "score-snapshot", "--run-id", p, "--date", day, "--months", str(body.months)])],
+                       title=f"Score snapshot {day} · {body.months} months", kind="score-snapshot",
+                       params={"date": day, "months": body.months})
     return jobs.job_dict(con, jid)
 
 

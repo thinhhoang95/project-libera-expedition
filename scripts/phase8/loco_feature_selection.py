@@ -1,16 +1,17 @@
 """Leave-one-cutoff-out: pick sign-robust features on 3 cutoffs, test on the 4th."""
 import numpy as np, pandas as pd
 from scipy.stats import spearmanr
-from landscape import store
+from landscape import experiments
 from landscape.config import project_dir
 from landscape.backtest import cluster_feature_table
 from landscape.cli import _params
-con = store.connect(); p = _params(con, "dro-pilot")
+RUN = experiments.run_arg()
+con = experiments.connect_ro(); p = _params(con, RUN)
 CUT = (2020, 2021, 2022, 2023)
 SAMPLES = {"all": None, "forward": {"forward"}, "nonforward": {"seed", "back", "author", "semantic"}}
 FEATS = ["novelty", "new_author_share", "g", "dg", "momentum", "ref_age", "ext_inflow", "coherence",
          "share_T", "mig_net", "cit_growth", "N"]
-tabs = {k: pd.concat([cluster_feature_table(con, "dro-pilot", T, p, r) for T in CUT]) for k, r in SAMPLES.items()}
+tabs = {k: pd.concat([cluster_feature_table(con, RUN, T, p, r) for T in CUT]) for k, r in SAMPLES.items()}
 for k in tabs: tabs[k] = tabs[k][tabs[k].n_total >= 10].reset_index(drop=True)
 def corr(d, f):
     cs = [spearmanr(g[f], g.y_logratio).statistic for _, g in d.groupby(["cutoff", "scope"])
@@ -42,5 +43,13 @@ for T in CUT:
                          "base_shrinking": g.hit_shrinking.mean()})
 r = pd.DataFrame(rows)
 print("features chosen per held-out cutoff:", chosen)
-print(r.groupby("ranking")[[c for c in r.columns if c not in ("cutoff", "scope", "ranking")]].mean().round(3).to_string())
-for k, v in tabs.items(): v.to_parquet(project_dir("dro-pilot", "backtest") / f"cluster_features_{k}.parquet")
+R = r.groupby("ranking")[[c for c in r.columns if c not in ("cutoff", "scope", "ranking")]].mean()
+print(R.round(3).to_string())
+for k, v in tabs.items(): v.to_parquet(project_dir(RUN, "backtest") / f"cluster_features_{k}.parquet")
+experiments.save(RUN, "phase8_direction", "loco_recipe_hits", R.reset_index(),
+                 title="Cluster direction: sign-robust features against the recipe's E (recipe hits)",
+                 how_to_read="Leave-one-cutoff-out: features whose sign agrees under every outcome sample are picked on "
+                 "three cutoffs and scored on the fourth (the robust score, E'), against the recipe's E, recent growth, "
+                 "size and momentum. rho_future is the correlation with the future share change; p@k uses the recipe's "
+                 "single-year hits; base_* are the base rates.",
+                 params={"features chosen per held-out cutoff": {str(k): v for k, v in chosen.items()}})

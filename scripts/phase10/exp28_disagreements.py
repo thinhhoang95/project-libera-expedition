@@ -108,6 +108,7 @@ async def classify():
         await client.close()
     pd.concat([have, pd.DataFrame(rows)]).to_parquet(OUT, index=False)
     print(f"classified {len(rows)}, spend ${client.spent:.4f}")
+    print(f"@@spend llm_experiments={client.spent:.6f}")  # scripts/run_experiments.py adds it to the run's spend
 
 
 def analyse():

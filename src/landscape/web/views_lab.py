@@ -119,7 +119,8 @@ def _doc_sections(path: Path) -> dict[str, str]:
 
 @router.get("/p/{p}/experiments")
 def experiments_index(p: str) -> dict:
-    from ..experiments import ORDER, PILOT_DECISIONS, SCRIPTS
+    from ..experiments import ORDER, PILOT_DECISIONS, SCRIPTS, STEP_OF
+    from ..jobs import CATALOG, STEPS
 
     sec = _doc_sections(PORTFOLIO_DOC)
     idx = experiments.load_index(p)
@@ -128,14 +129,22 @@ def experiments_index(p: str) -> dict:
         by_exp.setdefault(meta["experiment"], []).append({"name": name, **meta})
     exps = [e for e in ORDER if e in by_exp] + sorted(e for e in by_exp if e not in ORDER)
     groups = [{"experiment": e, "title": by_exp[e][0]["title"].split(":")[0], "decision": PILOT_DECISIONS.get(e),
-               "scripts": SCRIPTS.get(e, []), "last_saved": max(t["saved_at"] for t in by_exp[e]),
+               "scripts": SCRIPTS.get(e, []), "step": STEP_OF.get(e),
+               "step_label": STEPS[STEP_OF[e]].label if e in STEP_OF else None,
+               "last_saved": max(t["saved_at"] for t in by_exp[e]),
                "tables": sorted(by_exp[e], key=lambda t: t["name"])} for e in exps]
+    # the pipeline steps that produce these tables, and how many of their experiments have results for this project
+    steps = []
+    for name in [s.name for s in CATALOG if s.name in set(STEP_OF.values())]:
+        mine = [e for e, s in STEP_OF.items() if s == name]
+        steps.append({"name": name, "label": STEPS[name].label, "about": STEPS[name].about,
+                      "experiments": len(mine), "saved": sum(e in by_exp for e in mine)})
     bt = experiments.work_dir(p) / "summary.csv"
     return {"portfolio": {k: sec.get(k, "") for k in (
                 "The portfolio", "Verdicts", "Protocols, for reading the numbers",
                 "What the evidence says about how attention works (pilot)", "Implications for the product",
                 "Borrowed ideas (exp6)")},
-            "backtest": records(pd.read_csv(bt)) if bt.exists() else None, "groups": groups}
+            "backtest": records(pd.read_csv(bt)) if bt.exists() else None, "groups": groups, "steps": steps}
 
 
 @router.get("/p/{p}/experiments/table/{name}")

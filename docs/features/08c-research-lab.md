@@ -172,8 +172,11 @@ Bibliographic coupling uses references already listed by a paper; it does not re
 received citations. Neither this test nor the earlier paper-bridge experiments tests the
 birth of a community: they predict uptake by already established cutoff communities.
 
-Reproduce with `uv run python scripts/phase8c/semantic_ablation.py --run-id dro-pilot`.
-Results are saved to `data/projects/dro-pilot/research_lab/semantic_ablation.csv`.
+`landscape research-lab` runs it at the end; reproduce it alone with
+`uv run python scripts/phase8c/semantic_ablation.py --run-id dro-pilot`. Results are saved to
+`data/projects/dro-pilot/research_lab/semantic_ablation.csv` and to the Experiments view. The split is
+the purged chronological one: the latest cutoff with complete outcomes is the test cutoff (2022 on the
+pilot), trained on the cutoffs complete before it (2019).
 
 ## 4. Opportunities should be a disagreement to investigate
 

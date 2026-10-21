@@ -28,6 +28,12 @@ uv run --no-sync python exp28_disagreements.py [classify] [analyse]   # classifi
 ```
 
 Experiments 24 and 28 call the run's extraction model through `landscape.llm` (the rest stay self-contained).
+Each prints its spend as an `@@spend` line, which the runner adds to the run's spend.
+
+The web app runs all seventeen scripts in order (12 to 28) as the optional pipeline step `experiments-10`
+(`uv run python scripts/run_experiments.py --step experiments-10 --run-id <run>` from the repository root, which
+resumes after a failure). The step needs the 2019 cutoff run (`prepare-cutoffs`). The portfolio reads
+experiment 12's table for its entry effects, so the Full pipeline and Experiments templates rebuild it at the end.
 
 - **Self-contained:** the scripts use `scripts/phase10/common.py`, not the `landscape` package, and read the
   migrated layout (`data/shared/`, `data/projects/<run>/`).

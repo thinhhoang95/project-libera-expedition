@@ -1,10 +1,10 @@
 import json
 from dataclasses import replace
 import numpy as np, pandas as pd
-from landscape import store, signals
+from landscape import experiments, signals
 from landscape.backtest import Assigner
 from landscape.cli import _params
-con = store.connect(); base = "dro-pilot"; p0 = _params(con, base)
+con = experiments.connect_ro(); base = experiments.run_arg(); p0 = _params(con, base)
 papers = con.execute("SELECT v.paper_id, p.year FROM provenance v JOIN papers p USING (paper_id) WHERE v.run_id=?", [base]).df()
 year = papers.set_index("paper_id").year
 edges = con.execute("""SELECT r.citing_id, r.cited_id FROM refs r JOIN provenance a ON a.paper_id=r.citing_id AND a.run_id=?
@@ -42,4 +42,11 @@ for T in (2020, 2021, 2022, 2023):
             rows.append({"T": T, "variant": label + " [median flow_xy of top 50]", "p@10": np.median([json.loads(r["features"])["flow_xy"] for r in sorted(rows_b, key=sc, reverse=True)[:50]]), "p@20": np.nan, "p@50": np.nan})
             rows.append({"T": T, "variant": label, "p@10": np.mean(hs[:10]), "p@20": np.mean(hs[:20]), "p@50": np.mean(hs[:50])})
 r = pd.DataFrame(rows)
-print(r.groupby("variant")[["p@10", "p@20", "p@50"]].mean().round(3).sort_values("p@50", ascending=False).to_string())
+R = r.groupby("variant")[["p@10", "p@20", "p@50"]].mean().sort_values("p@50", ascending=False)
+print(R.round(3).to_string())
+experiments.save(base, "phase8_flow_penalty", "flow_penalty_power", R.reset_index(),
+                 title="Flow penalty: limitation -> innovation precision by flow-penalty exponent",
+                 how_to_read="Precision of the limitation -> innovation bridges for each exponent of the penalty on "
+                 "citations already flowing between the two clusters, averaged over cutoffs 2020-2023. Rows marked "
+                 "[median flow_xy of top 50] hold, in the p@10 column, the median existing flow of the top 50: a "
+                 "higher precision bought with a higher flow means the bridges are no longer missing.")

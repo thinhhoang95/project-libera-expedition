@@ -11,5 +11,8 @@ built by `uv run landscape backtest --run-id dro-pilot` and only use data alread
 | `people_and_novelty.py` | Do broker scores add information beyond popularity? Does novelty predict citations? |
 | `lim_flow_penalty.py` | Limitation → innovation: effect of the flow-penalty exponent on precision and on how "missing" the top bridges are. |
 
-Run with `PYTHONIOENCODING=utf-8 uv run python scripts/phase8/<script>.py` from the repo root,
-with the explorer closed.
+Run with `PYTHONIOENCODING=utf-8 uv run python scripts/phase8/<script>.py --run-id <run>` from the repo
+root (the default run is `dro-pilot`). They open the database read-only. Each saves its result table to
+`data/projects/<run>/backtest/experiments/`, which the Experiments view shows. The web app runs all five, in
+the order above, as the optional pipeline step `experiments-8`
+(`scripts/run_experiments.py --step experiments-8`).
